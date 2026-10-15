@@ -1,0 +1,17 @@
+# Esta maquina nao tem Visual Studio Build Tools (MSVC), entao o toolchain
+# padrao e o stable-x86_64-pc-windows-gnu e o link usa o MinGW-w64 portatil
+# (w64devkit, msvcrt + seh), que combina com o std do Rust para windows-gnu.
+#
+# Pre-requisitos no PATH (dlltool.exe e o linker):
+#   export PATH="$HOME/tools/w64devkit/w64devkit/bin:$HOME/.cargo/bin:$PATH"
+#
+# O w64devkit nao distribui o libgcc_eh.a (no mingw x86_64 ele e um arquivo
+# vazio; todo o runtime de unwinding fica no libgcc.a). O rustc sempre passa
+# -lgcc_eh, entao apontamos para um shim vazio em %USERPROFILE%\tools\mingw-rust-shim.
+#
+# Se um dia instalar o MSVC Build Tools, rode:
+#   rustup default stable-x86_64-pc-windows-msvc
+# e apague este arquivo.
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+rustflags = ["-L", "C:\\Users\\Osmar\\tools\\mingw-rust-shim"]
