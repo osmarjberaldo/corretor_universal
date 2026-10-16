@@ -63,6 +63,8 @@ pub struct Compartilhado {
     pub analise_geracao: u64,
     /// Histórico persistido de até 10 textos corrigidos mais recentes.
     pub historico: crate::historico::Historico,
+    /// Contexto da interface egui para acordar o loop quando necessário.
+    pub ctx: Option<eframe::egui::Context>,
 }
 
 impl Compartilhado {
@@ -86,6 +88,7 @@ impl Compartilhado {
             analisando: false,
             analise_geracao: 0,
             historico: crate::historico::Historico::carregar(),
+            ctx: None,
         }
     }
 
@@ -238,8 +241,14 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
         },
         Mensagem::Bandeja(acao) => match acao {
             AcaoBandeja::Abrir => {
+                #[cfg(windows)]
+                crate::tray::mostrar_janela();
+
                 if let Ok(mut c) = estado.lock() {
                     c.janela = Some(true);
+                    if let Some(ctx) = &c.ctx {
+                        ctx.request_repaint();
+                    }
                 }
             }
             AcaoBandeja::AlternarAtivo => {
@@ -248,6 +257,9 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
                     let ativo = c.config.ativo;
                     c.log(format!("[Sistema] Captura {}", if ativo { "ativada" } else { "pausada" }));
                     let _ = c.config.salvar();
+                    if let Some(ctx) = &c.ctx {
+                        ctx.request_repaint();
+                    }
                     !ativo
                 } else {
                     false
@@ -266,6 +278,9 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
                         if ligado { "ligado" } else { "desligado" }
                     ));
                     let _ = c.config.salvar();
+                    if let Some(ctx) = &c.ctx {
+                        ctx.request_repaint();
+                    }
                 }
             }
             AcaoBandeja::AlternarAutostart => {
@@ -277,6 +292,9 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
                         Err(e) => c.log(format!("[Erro Inicialização] {}", e)),
                     }
                     let _ = c.config.salvar();
+                    if let Some(ctx) = &c.ctx {
+                        ctx.request_repaint();
+                    }
                 }
             }
             AcaoBandeja::Sair => std::process::exit(0),

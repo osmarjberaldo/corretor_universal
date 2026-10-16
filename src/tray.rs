@@ -81,28 +81,84 @@ impl Bandeja {
     }
 }
 
+#[cfg(windows)]
+pub fn mostrar_janela() {
+    use windows::core::w;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+    };
+    unsafe {
+        if let Ok(hwnd) = FindWindowW(None, w!("Corretor Ortográfico Universal")) {
+            if hwnd.0 as usize != 0 {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+                let _ = ShowWindow(hwnd, SW_SHOW);
+                let _ = SetForegroundWindow(hwnd);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn mostrar_janela() {}
+
+fn despachar_menu(canal: &std::sync::mpsc::Sender<crate::motor::Mensagem>, id: &str) {
+    let acao = match id {
+        ID_ABRIR => Some(AcaoBandeja::Abrir),
+        ID_ALTERNAR => Some(AcaoBandeja::AlternarAtivo),
+        ID_DETECCAO => Some(AcaoBandeja::AlternarDeteccao),
+        ID_AUTOSTART => Some(AcaoBandeja::AlternarAutostart),
+        ID_SAIR => Some(AcaoBandeja::Sair),
+        _ => None,
+    };
+    if let Some(acao) = acao {
+        let _ = canal.send(crate::motor::Mensagem::Bandeja(acao));
+    }
+}
+
+fn despachar_tray(canal: &std::sync::mpsc::Sender<crate::motor::Mensagem>, evento: &tray_icon::TrayIconEvent) {
+    match evento {
+        tray_icon::TrayIconEvent::DoubleClick { .. } => {
+            let _ = canal.send(crate::motor::Mensagem::Bandeja(AcaoBandeja::Abrir));
+        }
+        tray_icon::TrayIconEvent::Click {
+            button: tray_icon::MouseButton::Left,
+            button_state: tray_icon::MouseButtonState::Up,
+            ..
+        } => {
+            let _ = canal.send(crate::motor::Mensagem::Bandeja(AcaoBandeja::Abrir));
+        }
+        _ => {}
+    }
+}
+
 /// Encaminha cliques do menu (e clique no ícone) para o motor do app.
+/// Registra o callback global e também mantém uma thread ouvindo os canais (receiver)
+/// para total garantia em qualquer ambiente Windows.
 pub fn instalar_handler(canal: std::sync::mpsc::Sender<crate::motor::Mensagem>) {
     let para_menu = canal.clone();
     MenuEvent::set_event_handler(Some(move |evento: MenuEvent| {
-        let acao = match evento.id.0.as_str() {
-            ID_ABRIR => Some(AcaoBandeja::Abrir),
-            ID_ALTERNAR => Some(AcaoBandeja::AlternarAtivo),
-            ID_DETECCAO => Some(AcaoBandeja::AlternarDeteccao),
-            ID_AUTOSTART => Some(AcaoBandeja::AlternarAutostart),
-            ID_SAIR => Some(AcaoBandeja::Sair),
-            _ => None,
-        };
-        if let Some(acao) = acao {
-            let _ = para_menu.send(crate::motor::Mensagem::Bandeja(acao));
-        }
+        despachar_menu(&para_menu, evento.id.as_ref());
     }));
 
+    let para_tray = canal.clone();
     tray_icon::TrayIconEvent::set_event_handler(Some(move |evento: tray_icon::TrayIconEvent| {
-        if let tray_icon::TrayIconEvent::DoubleClick { .. } = evento {
-            let _ = canal.send(crate::motor::Mensagem::Bandeja(AcaoBandeja::Abrir));
-        }
+        despachar_tray(&para_tray, &evento);
     }));
+
+    let para_thread = canal;
+    std::thread::spawn(move || {
+        let menu_rx = MenuEvent::receiver();
+        let tray_rx = tray_icon::TrayIconEvent::receiver();
+        loop {
+            while let Ok(evento) = menu_rx.try_recv() {
+                despachar_menu(&para_thread, evento.id.as_ref());
+            }
+            while let Ok(evento) = tray_rx.try_recv() {
+                despachar_tray(&para_thread, &evento);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
 }
 
 /// Ícone do app (mesmo desenho da bandeja), usado na janela e no ícone.
@@ -116,4 +172,75 @@ pub fn icone_aplicativo() -> Icon {
 pub fn pixels_icone() -> (Vec<u8>, u32, u32) {
     const RGBA: &[u8] = include_bytes!("../icone_32.rgba");
     (RGBA.to_vec(), 32, 32)
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use std::sync::mpsc::channel;
+
+    #[test]
+    fn despacha_todos_os_itens_do_menu() {
+        let (tx, rx) = channel();
+        despachar_menu(&tx, "abrir");
+        despachar_menu(&tx, "alternar");
+        despachar_menu(&tx, "deteccao");
+        despachar_menu(&tx, "autostart");
+        despachar_menu(&tx, "sair");
+        despachar_menu(&tx, "desconhecido");
+
+        match rx.recv().unwrap() {
+            crate::motor::Mensagem::Bandeja(AcaoBandeja::Abrir) => {}
+            outro => panic!("esperado Abrir, obteve {:?}", outro),
+        }
+        match rx.recv().unwrap() {
+            crate::motor::Mensagem::Bandeja(AcaoBandeja::AlternarAtivo) => {}
+            outro => panic!("esperado AlternarAtivo, obteve {:?}", outro),
+        }
+        match rx.recv().unwrap() {
+            crate::motor::Mensagem::Bandeja(AcaoBandeja::AlternarDeteccao) => {}
+            outro => panic!("esperado AlternarDeteccao, obteve {:?}", outro),
+        }
+        match rx.recv().unwrap() {
+            crate::motor::Mensagem::Bandeja(AcaoBandeja::AlternarAutostart) => {}
+            outro => panic!("esperado AlternarAutostart, obteve {:?}", outro),
+        }
+        match rx.recv().unwrap() {
+            crate::motor::Mensagem::Bandeja(AcaoBandeja::Sair) => {}
+            outro => panic!("esperado Sair, obteve {:?}", outro),
+        }
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn despacha_clique_duplo_e_simples_no_icone() {
+        let (tx, rx) = channel();
+        let ev_duplo = tray_icon::TrayIconEvent::DoubleClick {
+            id: tray_icon::TrayIconId::new("teste"),
+            position: tray_icon::dpi::PhysicalPosition::new(0.0, 0.0),
+            rect: tray_icon::Rect::default(),
+            button: tray_icon::MouseButton::Left,
+        };
+        despachar_tray(&tx, &ev_duplo);
+
+        match rx.recv().unwrap() {
+            crate::motor::Mensagem::Bandeja(AcaoBandeja::Abrir) => {}
+            outro => panic!("esperado Abrir para clique duplo, obteve {:?}", outro),
+        }
+
+        let ev_simples = tray_icon::TrayIconEvent::Click {
+            id: tray_icon::TrayIconId::new("teste"),
+            position: tray_icon::dpi::PhysicalPosition::new(0.0, 0.0),
+            rect: tray_icon::Rect::default(),
+            button: tray_icon::MouseButton::Left,
+            button_state: tray_icon::MouseButtonState::Up,
+        };
+        despachar_tray(&tx, &ev_simples);
+
+        match rx.recv().unwrap() {
+            crate::motor::Mensagem::Bandeja(AcaoBandeja::Abrir) => {}
+            outro => panic!("esperado Abrir para clique simples, obteve {:?}", outro),
+        }
+        assert!(rx.try_recv().is_err());
+    }
 }

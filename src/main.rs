@@ -38,7 +38,7 @@ struct CorretorApp {
     hotkey_manager: Option<GlobalHotKeyManager>,
     hotkey_atual: Option<HotKey>,
     hotkey_id: Arc<AtomicU32>,
-    _bandeja: Option<tray::Bandeja>,
+    bandeja: Option<tray::Bandeja>,
     nova_palavra: String,
     texto_teste: String,
     resultado_teste: Option<String>,
@@ -49,7 +49,7 @@ struct CorretorApp {
 
 impl CorretorApp {
     fn new(
-        _cc: &eframe::CreationContext<'_>,
+        cc: &eframe::CreationContext<'_>,
         estado: Estado,
         canal: std::sync::mpsc::Sender<Mensagem>,
         hotkey_manager: Option<GlobalHotKeyManager>,
@@ -57,13 +57,16 @@ impl CorretorApp {
         hotkey_id: Arc<AtomicU32>,
         bandeja: Option<tray::Bandeja>,
     ) -> Self {
+        if let Ok(mut c) = estado.lock() {
+            c.ctx = Some(cc.egui_ctx.clone());
+        }
         Self {
             estado,
             canal,
             hotkey_manager,
             hotkey_atual,
             hotkey_id,
-            _bandeja: bandeja,
+            bandeja,
             nova_palavra: String::new(),
             texto_teste: "Eu gosto de programaçao em Rust e vc sabe disso.".to_string(),
             resultado_teste: None,
@@ -761,7 +764,7 @@ impl eframe::App for CorretorApp {
         });
 
         // Mantém o estado da bandeja e da detecção iguais à configuração.
-        if let Some(bandeja) = &self._bandeja {
+        if let Some(bandeja) = &self.bandeja {
             bandeja.sincronizar(est.config.ativo, est.config.deteccao_automatica, est.config.iniciar_com_sistema);
         }
         deteccao::ligar(est.config.ativo && est.config.deteccao_automatica);
