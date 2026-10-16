@@ -14,7 +14,6 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 const ENDPOINT: &str = "https://api.languagetool.org/v2/check";
-const TIMEOUT: Duration = Duration::from_secs(6);
 
 #[derive(Deserialize, Debug)]
 struct LtResponse {
@@ -105,13 +104,16 @@ pub fn analisar(
     idioma: &str,
     dicionario: &HashSet<String>,
 ) -> Result<Vec<Aviso>, String> {
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) CorretorUniversal/1.0")
+        .timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
     let params = [("text", texto), ("language", idioma)];
 
     let res = client
         .post(ENDPOINT)
         .form(&params)
-        .timeout(TIMEOUT)
         .send()
         .map_err(|e| e.to_string())?;
 

@@ -10,7 +10,7 @@ use crate::correcao::Aviso;
 use crate::deteccao;
 use crate::popup::{
     Icone, ItemBarra, PopupEvento, Popups, ACAO_NENHUMA, ACAO_ABRIR_APP, ACAO_COPIAR, ACAO_CORRIGIR,
-    ACAO_CORRIGIR_COPIAR, ACAO_DICIONARIO, ACAO_FECHAR, ACAO_MAIS, ACAO_MELHORAR, ACAO_MELHORAR_CURTO,
+    ACAO_CORRIGIR_COPIAR, ACAO_DICIONARIO, ACAO_FECHAR, ACAO_HISTORICO, ACAO_MAIS, ACAO_MELHORAR, ACAO_MELHORAR_CURTO,
     ACAO_MELHORAR_FORMAL, ACAO_MELHORAR_SIMPLES, ACAO_PAUSAR, ACAO_REVISAR, ACAO_SAIR,
     ACAO_SUGESTAO_BASE, MAX_SUGESTOES,
 };
@@ -27,6 +27,8 @@ pub enum Mensagem {
     Hotkey,
     /// Texto selecionado detectado com o mouse.
     Selecao { x: i32, y: i32, editavel: bool },
+    /// Teste direto da barra flutuante (preview visual).
+    TestarBarra { x: i32, y: i32 },
     /// Pedido para analisar de novo o texto selecionado (botão da janela).
     Reanalisar,
     /// Eventos das janelas de popup (escolha de ação, fechamento).
@@ -59,6 +61,8 @@ pub struct Compartilhado {
     /// Contador para descartar análise antiga quando o usuário já selecionou
     /// outro texto.
     pub analise_geracao: u64,
+    /// Histórico persistido de até 10 textos corrigidos mais recentes.
+    pub historico: crate::historico::Historico,
 }
 
 impl Compartilhado {
@@ -81,6 +85,7 @@ impl Compartilhado {
             analise_texto: None,
             analisando: false,
             analise_geracao: 0,
+            historico: crate::historico::Historico::carregar(),
         }
     }
 
@@ -180,6 +185,11 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
             contexto.foco_editavel = editavel;
             contexto.posicao = (x, y);
             mostrar_barra(estado, popups, x, y, true);
+        }
+        Mensagem::TestarBarra { x, y } => {
+            contexto.foco_editavel = false;
+            contexto.posicao = (x, y);
+            mostrar_barra(estado, popups, x, y, false);
         }
         Mensagem::Popup(evento) => match evento {
             PopupEvento::Acao(id) => {
@@ -305,9 +315,11 @@ pub fn itens_menu(analise: &[Aviso], analisando: bool) -> Vec<ItemBarra> {
         ]),
         ItemBarra::acao(ACAO_COPIAR, "Copiar", Icone::Copiar).somente_icone(),
         ItemBarra::acao(ACAO_MAIS, "Mais ações", Icone::Mais)
+            .somente_icone()
             .com_divisor()
             .com_submenu(vec![
-                (ACAO_ABRIR_APP, "Abrir o app".to_string()),
+                (ACAO_HISTORICO, "Histórico de correções (10 recentes)".to_string()),
+                (ACAO_ABRIR_APP, "Configurações do app".to_string()),
                 (ACAO_DICIONARIO, "Adicionar seleção ao dicionário".to_string()),
                 (ACAO_PAUSAR, "Pausar a captura".to_string()),
                 (ACAO_SAIR, "Sair".to_string()),
@@ -529,6 +541,7 @@ fn aplicar_sugestao(estado: &Estado, popups: &Arc<Popups>, indice: usize, editav
 
             entregar(&estado_worker, popups_worker.as_ref(), editavel, &final_texto)?;
             if let Ok(mut c) = estado_worker.lock() {
+                c.historico.adicionar(&texto, &final_texto, "Alternativa de Correção");
                 c.analise.clear();
                 c.analise_texto = None;
             }
@@ -568,7 +581,7 @@ fn acao_controle(id: u32, estado: &Estado, popups: &Arc<Popups>) -> bool {
             popups.fechar();
             true
         }
-        ACAO_ABRIR_APP => {
+        ACAO_HISTORICO | ACAO_ABRIR_APP => {
             if let Ok(mut c) = estado.lock() {
                 c.janela = Some(true);
             }
@@ -669,7 +682,7 @@ fn foco_e_nosso() -> bool {
     deteccao::analisar_foco().map(|f| f.pid == std::process::id()).unwrap_or(false)
 }
 
-fn posicao_cursor() -> (i32, i32) {
+pub fn posicao_cursor() -> (i32, i32) {
     #[cfg(windows)]
     {
         use windows::Win32::Foundation::POINT;
@@ -791,8 +804,22 @@ fn executar_acao(
         match crate::correcao::corrigir_via_api(&texto, &idioma, &dicionario) {
             Ok(t) => t,
             Err(e) => {
-                logar(estado, format!("[Erro na API] {}", e));
-                return Err(());
+                if config.ia_configurada() {
+                    logar(
+                        estado,
+                        format!("[Aviso API] Falha na rede ({}); acionando IA personalizada como fallback...", e),
+                    );
+                    match crate::ia::corrigir_com_ia(&texto, &config) {
+                        Ok(t) => t,
+                        Err(e_ia) => {
+                            logar(estado, format!("[Erro na API e IA] API: {} | IA: {}", e, e_ia));
+                            return Err(());
+                        }
+                    }
+                } else {
+                    logar(estado, format!("[Erro na API] {}", e));
+                    return Err(());
+                }
             }
         }
     };
@@ -807,6 +834,9 @@ fn executar_acao(
             estado,
             format!("Correção copiada (campo intacto): {}", resumir(&final_texto)),
         );
+        if let Ok(mut c) = estado.lock() {
+            c.historico.adicionar(&texto, &final_texto, "Cópia da Correção");
+        }
         return Ok(final_texto);
     }
 
@@ -824,7 +854,14 @@ fn executar_acao(
 
     entregar(estado, popups, editavel, &final_texto)?;
 
+    let tipo = if eh_acao_de_ia(acao) {
+        "Melhoria (IA)"
+    } else {
+        "Correção Ortográfica"
+    };
+
     if let Ok(mut c) = estado.lock() {
+        c.historico.adicionar(&texto, &final_texto, tipo);
         c.janela = None;
     }
     Ok(final_texto)

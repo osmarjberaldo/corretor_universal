@@ -48,10 +48,12 @@ mod win {
     use uiautomation::patterns::{UITextPattern, UIValuePattern};
     use uiautomation::UIAutomation;
     use windows::Win32::Foundation::POINT;
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_CONTROL, VK_LBUTTON, VK_MENU,
+    };
     use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
-    /// Sobe o observador de mouse, que avisa o motor quando há seleção.
+    /// Sobe o observador de mouse e teclado, que avisa o motor quando há seleção ou atalho.
     pub fn iniciar(canal: Sender<Mensagem>) {
         std::thread::spawn(move || observar(canal));
     }
@@ -132,23 +134,38 @@ mod win {
         unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) & 0x8000u16 as i16) != 0 }
     }
 
+    fn atalho_pressionado() -> bool {
+        unsafe {
+            let ctrl = (GetAsyncKeyState(VK_CONTROL.0 as i32) & 0x8000u16 as i16) != 0;
+            let alt = (GetAsyncKeyState(VK_MENU.0 as i32) & 0x8000u16 as i16) != 0;
+            let tecla_c = (GetAsyncKeyState(0x43) & 0x8000u16 as i16) != 0; // 'C' key
+            ctrl && alt && tecla_c
+        }
+    }
+
     fn observar(canal: Sender<Mensagem>) {
-        let automation = match UIAutomation::new() {
-            Ok(a) => a,
-            Err(_) => return,
-        };
+        let automation = UIAutomation::new().ok();
         let proprio_pid = std::process::id();
 
         let mut antes_pressionado = false;
+        let mut antes_hotkey = false;
         let mut inicio = (0, 0);
         let mut instante_pressao = Instant::now();
         let mut ultimo_clique = Instant::now() - Duration::from_secs(10);
         let mut ultima_pos_clique = (0, 0);
 
         loop {
+            // Atalho global Ctrl+Alt+C: verificado de forma nativa e instantânea
+            let hotkey_ativo = atalho_pressionado();
+            if hotkey_ativo && !antes_hotkey {
+                let _ = canal.send(Mensagem::Hotkey);
+            }
+            antes_hotkey = hotkey_ativo;
+
+            // Se a detecção automática com o mouse estiver desativada, continua verificando apenas o atalho
             if !LIGADO.load(Ordering::Relaxed) {
                 antes_pressionado = false;
-                std::thread::sleep(Duration::from_millis(150));
+                std::thread::sleep(Duration::from_millis(35));
                 continue;
             }
 
@@ -171,29 +188,32 @@ mod win {
                 ultimo_clique = agora;
                 ultima_pos_clique = posicao;
 
-                // Não dispara em cliques simples comuns (arrasto acidental/tremor < 10px).
-                // Só processa se houve arrasto real para selecionar texto ou clique duplo.
-                if arrasto >= 10 || clique_duplo {
-                    // dá tempo do aplicativo de destino registrar a seleção
-                    std::thread::sleep(Duration::from_millis(140));
-                    if let Some(foco) = analisar(&automation) {
-                        if foco.pid != proprio_pid && !foco.senha {
-                            // Se o elemento suporta TextPattern (padrão em navegadores, editores, Office, etc.),
-                            // SÓ exibe se de fato houver texto selecionado não-vazio.
-                            // Em controles legados sem TextPattern, exige arrasto substancial de seleção (>= 14px).
-                            let tem_selecao_real = if foco.tem_text_pattern {
-                                foco.tem_selecao
-                            } else {
-                                foco.suporta_texto && arrasto >= 14
-                            };
+                // Processa se houve arrasto real para selecionar texto ou clique duplo
+                if arrasto >= 12 || clique_duplo {
+                    std::thread::sleep(Duration::from_millis(120));
+                    let foco = automation.as_ref().and_then(|a| analisar(a));
+                    let pid = foco.as_ref().map(|f| f.pid).unwrap_or(0);
+                    let senha = foco.as_ref().map(|f| f.senha).unwrap_or(false);
 
-                            if tem_selecao_real {
-                                let _ = canal.send(Mensagem::Selecao {
-                                    x: posicao.0,
-                                    y: posicao.1,
-                                    editavel: foco.editavel,
-                                });
+                    if pid != proprio_pid && !senha {
+                        let editavel = foco.as_ref().map(|f| f.editavel).unwrap_or(true);
+                        let tem_selecao_real = match &foco {
+                            Some(f) => {
+                                if f.tem_text_pattern {
+                                    f.tem_selecao
+                                } else {
+                                    arrasto >= 14 || clique_duplo
+                                }
                             }
+                            None => arrasto >= 14 || clique_duplo,
+                        };
+
+                        if tem_selecao_real {
+                            let _ = canal.send(Mensagem::Selecao {
+                                x: posicao.0,
+                                y: posicao.1,
+                                editavel,
+                            });
                         }
                     }
                 }

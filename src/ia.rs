@@ -78,6 +78,54 @@ pub fn melhorar(texto: &str, cfg: &Config, estilo: Estilo) -> Result<String, Str
         .ok_or_else(|| format!("resposta sem \"choices[0].message.content\": {}", resumir(&texto_resposta)))
 }
 
+/// Corrige o texto usando a IA (usado como fallback automático quando a API pública oscilar).
+pub fn corrigir_com_ia(texto: &str, cfg: &Config) -> Result<String, String> {
+    if !cfg.ia_configurada() {
+        return Err("IA personalizada não configurada.".to_string());
+    }
+
+    let url = endpoint_chat(&cfg.ia_url);
+    let instrucao = "Você é um corretor ortográfico e gramatical estrito em português do Brasil. \
+                     Corrija os erros ortográficos, gramaticais, acentuação e pontuação do texto. \
+                     Mantenha rigorosamente o vocabulário e sentido original. \
+                     Responda única e exclusivamente com o texto final corrigido, sem comentários ou explicações.";
+    let corpo = serde_json::json!({
+        "model": cfg.ia_modelo.trim(),
+        "temperature": 0.1,
+        "messages": [
+            { "role": "system", "content": instrucao },
+            { "role": "user", "content": texto }
+        ]
+    });
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(25))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut req = client.post(&url).json(&corpo);
+    if !cfg.ia_chave.trim().is_empty() {
+        req = req.bearer_auth(cfg.ia_chave.trim());
+    }
+
+    let res = req.send().map_err(|e| format!("{} ({})", e, url))?;
+    let status = res.status();
+    let texto_resposta = res.text().map_err(|e| e.to_string())?;
+
+    if !status.is_success() {
+        return Err(format!("HTTP {}: {}", status, resumir(&texto_resposta)));
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_str(&texto_resposta).map_err(|e| format!("JSON inválido: {}", e))?;
+
+    json["choices"][0]["message"]["content"]
+        .as_str()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("resposta sem \"choices[0].message.content\": {}", resumir(&texto_resposta)))
+}
+
 fn resumir(texto: &str) -> String {
     let limpo: String = texto.split_whitespace().collect::<Vec<_>>().join(" ");
     if limpo.chars().count() > 300 {

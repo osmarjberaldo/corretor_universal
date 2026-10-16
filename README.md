@@ -3,28 +3,37 @@
 > **Projeto 100% Gratuito e de Código Aberto (Open Source - Licença MIT)**  
 > 🤖 **Desenvolvido com o auxílio de Inteligência Artificial (IA)**.  
 > ✨ Sinta-se livre para usar, estudar, modificar e compartilhar como e onde quiser!  
-> 💧 **Novo visual**: barra flutuante translúcida estilo gota d'água / pílula (*Apple Liquid Glass*), com detecção aprimorada que dispara **apenas** quando houver texto realmente selecionado.
+> 💧 **Novo visual**: barra flutuante translúcida estilo gota d'água / pílula (*Apple Liquid Glass*), com reflexo especular, ícones nítidos e detecção inteligente que dispara **apenas** quando houver texto realmente selecionado.
 
 Selecione um texto (arrastando o mouse ou dando duplo clique numa palavra) e uma **barra de ações aparece sozinha**
-no cursor, no estilo das barras de correção nativas (ícone + rótulo, separadores,
+no cursor, no estilo das barras de correção nativas da Apple (ícone + rótulo, separadores translúcidos,
 setas de submenu, botão de copiar, "⋮" e "✕"):
 
 ```
-[ A ] │ [ A✎ Corrigir ▾ ]  [ ✧ Melhorar ▾ ]  [ ⧉ ] │ [ ⋮ ]  [ ✕ ]
+[ 💧 A ] │ [ ✓ Corrigir ▾ ]  [ ✨ Melhorar ▾ ]  [ 📋 ] │ [ ⋮ ]  [ ✕ ]
 ```
 
 | Botão | O que faz |
 | --- | --- |
-| **Corrigir** | Ortografia/gramática pelo LanguageTool. Campo editável → substitui a seleção no lugar; campo travado → balão com o resultado. |
-| **Corrigir ▾** | Flyout: *Substituir a seleção*, *Apenas copiar a correção* e — quando a verificação já terminou — **as alternativas reais do primeiro aviso** (*Só isto: programaçao → programação*, *programadão*, ...) mais *Revisar N aviso(s) na janela…*. |
-| **✧ Melhorar** | Reescreve o texto na IA personalizada (endpoint compatível com OpenAI) e aplica o resultado. |
-| **✧ Melhorar ▾** | Flyout com o estilo do pedido: *Clareza e gramática* (usa o seu prompt), *Mais formal*, *Mais simples*, *Mais curto*. |
-| **⧉ Copiar** (só o ícone) | Copia a seleção como está, sem chamar API/IA. |
-| **⋮** | Flyout: *Abrir o app*, *Adicionar seleção ao dicionário* (uma palavra só), *Pausar a captura*, *Sair*. |
+| **✓ Corrigir** | Ortografia/gramática pelo LanguageTool (com fallback inteligente para IA se a API oscilar). Campo editável → substitui a seleção no lugar; campo travado → balão escuro com o resultado. |
+| **✓ Corrigir ▾** | Flyout: *Substituir a seleção*, *Apenas copiar a correção* e — quando a verificação já terminou — **as alternativas reais do primeiro aviso** (*Só isto: programaçao → programação*, *programadão*, ...) mais *Revisar N aviso(s) na janela…*. |
+| **✨ Melhorar** | Reescreve o texto na IA personalizada (endpoint compatível com OpenAI, Groq, Ollama, etc.) e aplica o resultado. |
+| **✨ Melhorar ▾** | Flyout com o estilo do pedido: *Clareza e gramática* (usa o seu prompt), *Mais formal*, *Mais simples*, *Mais curto*. |
+| **📋 Copiar** (só o ícone) | Copia a seleção como está, sem chamar API/IA. |
+| **⋮** | Flyout: *Histórico de correções (10 recentes)*, *Configurações do app*, *Adicionar seleção ao dicionário* (uma palavra só), *Pausar a captura*, *Sair*. |
 | **✕** | Fecha a barra (o mesmo que `Esc` ou clicar fora). |
 
 A barra **não rouba o foco**: o clique em "Corrigir" cola no campo onde você
 estava, e não no popup (as janelas são criadas com `WS_EX_NOACTIVATE`).
+
+## Novidades e Recursos Recentes
+
+* 💧 **Design Apple Aqua / Liquid Glass**: Cápsula translúcida vítrea com linha de luz de reflexo especular superior (`BORDA_ESPECULAR`), badge de marca circular em gota d'água marinha (`MARCA_FUNDO` `#153045` + `MARCA_BORDA` `#2A7DC0`), e ícone dos três pontos verticais (`⋮`) com traçado duplo sólido (sem falhas de rasterização GDI).
+* 📜 **Histórico Persistente (10 recentes)**: Salva automaticamente as últimas 10 correções em `%APPDATA%\corretor_universal\historico.json`. Acompanhe original vs. corrigido, data/hora, tipo de motor (LanguageTool / IA) e copie facilmente.
+* 🤖 **Fallback Automático para IA**: Se o serviço público LanguageTool estiver indisponível ou sofrer com limite de requisições, o motor recorre à sua IA configurada de modo transparente.
+* 🔄 **Reinício Automático Opcional**: Opção na aba *Configurações* para reiniciar o app automaticamente ao salvar novas credenciais/modelos de IA, recarregando conexões imediatamente.
+* 🎯 **Botão de Teste Visual**: Na aba *Teste e Avisos*, utilize o botão **`🎯 Testar Barra Flutuante Agora`** para abrir a barra instantaneamente na posição do mouse e inspecionar os ícones e efeitos de hover.
+* 🖼️ **Ícone do Executável Integrado**: O binário `.exe` inclui ícone nativo do Windows compilado automaticamente via `icone.rc` e `build.rs`.
 
 ## Revisão aviso por aviso (como no LanguageTool)
 
@@ -60,28 +69,147 @@ esconde — para sair de verdade use **Sair** no menu da bandeja.
 O atalho global `Ctrl+Alt+C` (`Cmd+Alt+C` no macOS) continua funcionando e abre
 a mesma barra.
 
-## Build
+## Build e Execução (Todos os Sistemas Operacionais)
 
+### 1. Windows
+
+O projeto no Windows suporta duas abordagens de compilação: **GNU (MinGW-w64)** ou **MSVC (Visual Studio)**.
+
+#### Opção A: Ambiente GNU / MinGW-w64 portátil (sem Visual Studio)
+Ideal para compilar sem precisar instalar o Visual Studio completo (~10 GB):
+
+1. **Instalar o Rust com Toolchain GNU**:
+   - Baixe o instalador oficial [rustup-init.exe](https://win.rustup.rs/x86_64).
+   - Execute no PowerShell para instalar o toolchain GNU minimal:
+     ```powershell
+     .\rustup-init.exe -y --default-host x86_64-pc-windows-gnu --default-toolchain stable --profile minimal
+     ```
+2. **MinGW-w64 portátil (`w64devkit`)**:
+   - Baixe a versão mais recente do [w64devkit](https://github.com/skeeto/w64devkit/releases).
+   - Extraia a pasta `w64devkit` em `%USERPROFILE%\tools\w64devkit\w64devkit`.
+3. **Shim do `libgcc_eh.a`**:
+   - O w64devkit em 64-bit não distribui `libgcc_eh.a` avulso. Crie a pasta `%USERPROFILE%\tools\mingw-rust-shim` e gere o shim vazio:
+     ```powershell
+     New-Item -ItemType Directory -Path "$env:USERPROFILE\tools\mingw-rust-shim" -Force
+     & "$env:USERPROFILE\tools\w64devkit\w64devkit\bin\x86_64-w64-mingw32-ar.exe" crs "$env:USERPROFILE\tools\mingw-rust-shim\libgcc_eh.a"
+     ```
+4. **Configuração do `.cargo/config.toml`**:
+   - Mantenha o arquivo `.cargo/config.toml` com:
+     ```toml
+     [target.x86_64-pc-windows-gnu]
+     linker = "x86_64-w64-mingw32-gcc"
+     rustflags = ["-L", "C:\\Users\\<SEU_USUARIO>\\tools\\mingw-rust-shim"]
+     ```
+5. **Compilar (escolha uma das opções)**:
+   - No **PowerShell**: `.\build.ps1`
+   - No **Prompt de Comando / Duplo clique no Explorer**: `build.bat`
+   - No **Git Bash**: `./build.sh`
+   - Ou diretamente com Cargo:
+     ```powershell
+     $env:PATH = "$env:USERPROFILE\tools\w64devkit\w64devkit\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"
+     cargo build --release
+     ```
+6. **Executar**:
+   ```powershell
+   .\target\release\corretor_universal.exe
+   ```
+
+#### Opção B: MSVC (Visual Studio Build Tools)
+Se você já possui o Visual Studio ou os Build Tools com C++ instalados:
+
+1. **Configurar o toolchain MSVC**:
+   ```powershell
+   rustup default stable-x86_64-pc-windows-msvc
+   ```
+2. **Remover a personalização GNU**:
+   - Exclua ou renomeie o arquivo `.cargo/config.toml`.
+3. **Compilar**:
+   ```powershell
+   cargo build --release
+   ```
+4. **Executar**:
+   ```powershell
+   .\target\release\corretor_universal.exe
+   ```
+
+---
+
+### 2. Linux (Ubuntu, Debian, Fedora, Arch)
+
+No Linux, o app utiliza X11/OpenGL e a API pública do LanguageTool. A detecção automática de cliques e UIA é específica do Windows; no Linux a interface abre e responde ao atalho global **`Ctrl + Alt + C`**.
+
+#### Passo 1: Instalar Dependências de Sistema
+
+- **Debian / Ubuntu / Linux Mint**:
+  ```bash
+  sudo apt update
+  sudo apt install -y build-essential pkg-config libssl-dev \
+      libx11-dev libxext-dev libxft-dev libxinerama-dev \
+      libxcursor-dev libxi-dev libxrandr-dev libxss-dev libgl1-mesa-dev
+  ```
+
+- **Fedora / RHEL**:
+  ```bash
+  sudo dnf install -y gcc pkgconf-pkg-config openssl-devel \
+      libX11-devel libXcursor-devel libXrandr-devel libXi-devel mesa-libGL-devel
+  ```
+
+- **Arch Linux / Manjaro**:
+  ```bash
+  sudo pacman -S --needed base-devel openssl libx11 libxcursor libxrandr libxi mesa pkgconf
+  ```
+
+#### Passo 2: Instalar o Rust
 ```bash
-./build.sh          # equivale a: cargo build --release
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
 ```
 
-Saída: `target/release/corretor_universal.exe`.
+#### Passo 3: Compilar e Rodar
+Certifique-se de que o arquivo `.cargo/config.toml` (específico para Windows GNU) não interfira no build do Linux. O Cargo ignora o alvo `x86_64-pc-windows-gnu` automaticamente no Linux.
 
-### Ambiente desta máquina (Windows sem MSVC)
+```bash
+cargo build --release
+./target/release/corretor_universal
+```
 
-Não há Visual Studio Build Tools instalado, então o toolchain é o
-`stable-x86_64-pc-windows-gnu` com MinGW-w64 portátil:
+> **Dica Wayland**: Se utilizar ambientes como GNOME/KDE sob Wayland nativo e o atalho global não disparar, execute com XWayland ou configure o atalho de teclado global do próprio ambiente chamando `./target/release/corretor_universal`.
 
-| Peça | Onde |
-| --- | --- |
-| rustup + toolchain GNU (1.99.0) | `%USERPROFILE%\.cargo`, `%USERPROFILE%\.rustup` |
-| MinGW-w64 gcc 16.2.0 + dlltool | `%USERPROFILE%\tools\w64devkit\w64devkit\bin` |
-| `libgcc_eh.a` (vazio no mingw x64, não distribuído pelo w64devkit) | `%USERPROFILE%\tools\mingw-rust-shim` |
+---
 
-O `.cargo/config.toml` aponta o linker (`x86_64-w64-mingw32-gcc`), o shim do
-`libgcc_eh` e documenta o PATH necessário. Com MSVC instalado, basta
-`rustup default stable-x86_64-pc-windows-msvc` e apagar esse arquivo.
+### 3. macOS (Apple Silicon M1/M2/M3/M4 & Intel)
+
+No macOS, o atalho global padrão é **`Cmd + Option + C`** (ou `Ctrl + Alt + C`).
+
+#### Passo 1: Instalar Xcode Command Line Tools
+Abra o Terminal e execute:
+```bash
+xcode-select --install
+```
+
+#### Passo 2: Instalar o Rust
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+#### Passo 3: Compilar
+```bash
+cargo build --release
+```
+
+#### Passo 4: Conceder Permissões de Acessibilidade
+Para que o atalho global funcione entre aplicativos no macOS:
+1. Abra **Ajustes do Sistema** (System Settings).
+2. Vá em **Privacidade e Segurança > Acessibilidade** (Privacy & Security > Accessibility).
+3. Habilite o **Terminal** (ou o executável compilado).
+
+#### Passo 5: Executar
+```bash
+./target/release/corretor_universal
+```
+
+---
 
 ## Modos de linha de comando (verificação)
 
