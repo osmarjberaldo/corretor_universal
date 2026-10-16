@@ -1,4 +1,4 @@
-name: "Build e Release Multi-Plataforma"
+name: "Release Multi-Plataforma"
 
 on:
   push:
@@ -7,22 +7,19 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag / Versao do Release (ex: v1.1.0)'
+        description: 'Tag / Versao do Release'
         required: true
         default: 'v1.1.0'
 
 permissions:
   contents: write
 
-env:
-  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag_name || 'v1.1.0' }}
-
 jobs:
   build-windows:
     name: Windows (x86_64)
     runs-on: windows-latest
     steps:
-      - name: Checkout do repositorio
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Instalar Rust
@@ -35,8 +32,10 @@ jobs:
 
       - name: Empacotar ZIP (.zip)
         shell: pwsh
+        env:
+          INPUT_TAG: ${{ inputs.tag_name }}
         run: |
-          $TAG = $env:RELEASE_TAG
+          $TAG = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { $env:INPUT_TAG }
           if (-not $TAG) { $TAG = "v1.1.0" }
           $OUT_DIR = "corretor_universal-${TAG}-windows-x86_64"
           New-Item -ItemType Directory -Path $OUT_DIR -Force
@@ -56,10 +55,10 @@ jobs:
     name: Linux (x86_64)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout do repositorio
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Instalar Dependencias do Sistema (X11 / OpenGL / GTK / Tray)
+      - name: Instalar Dependencias do Sistema
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -77,8 +76,13 @@ jobs:
         run: cargo build --release --target x86_64-unknown-linux-gnu
 
       - name: Empacotar (.tar.gz)
+        env:
+          INPUT_TAG: ${{ inputs.tag_name }}
         run: |
-          TAG="${RELEASE_TAG:-v1.1.0}"
+          TAG="${GITHUB_REF_NAME}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            TAG="${INPUT_TAG:-v1.1.0}"
+          fi
           OUT_DIR="corretor_universal-${TAG}-linux-x86_64"
           mkdir -p "$OUT_DIR"
           cp target/x86_64-unknown-linux-gnu/release/corretor_universal "$OUT_DIR/"
@@ -98,10 +102,10 @@ jobs:
           path: corretor_universal-*-linux-x86_64.tar.gz*
 
   build-macos:
-    name: macOS (Universal: Apple Silicon + Intel)
+    name: macOS (Universal)
     runs-on: macos-latest
     steps:
-      - name: Checkout do repositorio
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Instalar Rust Toolchain
@@ -109,19 +113,24 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
-      - name: Adicionar target x86_64 (Intel)
+      - name: Adicionar target x86_64
         run: rustup target add x86_64-apple-darwin
 
-      - name: Compilar macOS aarch64 (Apple Silicon)
+      - name: Compilar macOS aarch64
         run: cargo build --release --target aarch64-apple-darwin
 
-      - name: Compilar macOS x86_64 (Intel)
+      - name: Compilar macOS x86_64
         run: cargo build --release --target x86_64-apple-darwin
 
       - name: Montar Universal Binary e Bundle .app
+        env:
+          INPUT_TAG: ${{ inputs.tag_name }}
         run: |
           chmod +x packaging/macos/build_app.sh
-          TAG="${RELEASE_TAG:-v1.1.0}"
+          TAG="${GITHUB_REF_NAME}"
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            TAG="${INPUT_TAG:-v1.1.0}"
+          fi
           ./packaging/macos/build_app.sh "$TAG"
 
       - name: Salvar Artefato
@@ -138,7 +147,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Baixar todos os artefatos compilados
+      - name: Baixar artefatos
         uses: actions/download-artifact@v4
         with:
           path: dist_release/
@@ -149,8 +158,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: "Corretor Universal ${{ env.RELEASE_TAG }}"
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag_name || 'v1.1.0' }}
+          name: "Corretor Universal ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag_name || 'v1.1.0' }}"
           draft: false
           prerelease: false
           generate_release_notes: true
