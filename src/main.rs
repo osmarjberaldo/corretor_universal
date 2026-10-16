@@ -19,6 +19,7 @@ use global_hotkey::{
 };
 use motor::{Compartilhado, Estado, Mensagem};
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -34,7 +35,9 @@ enum AbaApp {
 struct CorretorApp {
     estado: Estado,
     canal: std::sync::mpsc::Sender<Mensagem>,
-    _hotkey_manager: Option<GlobalHotKeyManager>,
+    hotkey_manager: Option<GlobalHotKeyManager>,
+    hotkey_atual: Option<HotKey>,
+    hotkey_id: Arc<AtomicU32>,
     _bandeja: Option<tray::Bandeja>,
     nova_palavra: String,
     texto_teste: String,
@@ -50,12 +53,16 @@ impl CorretorApp {
         estado: Estado,
         canal: std::sync::mpsc::Sender<Mensagem>,
         hotkey_manager: Option<GlobalHotKeyManager>,
+        hotkey_atual: Option<HotKey>,
+        hotkey_id: Arc<AtomicU32>,
         bandeja: Option<tray::Bandeja>,
     ) -> Self {
         Self {
             estado,
             canal,
-            _hotkey_manager: hotkey_manager,
+            hotkey_manager,
+            hotkey_atual,
+            hotkey_id,
             _bandeja: bandeja,
             nova_palavra: String::new(),
             texto_teste: "Eu gosto de programaçao em Rust e vc sabe disso.".to_string(),
@@ -63,6 +70,25 @@ impl CorretorApp {
             saindo: false,
             aba_ativa: AbaApp::Historico,
             reiniciar_apos_salvar: true,
+        }
+    }
+
+    fn recarregar_atalho(&mut self, config_atalho: &config::AtalhoConfig) {
+        if let Some(manager) = &mut self.hotkey_manager {
+            if let Some(antigo) = self.hotkey_atual.take() {
+                let _ = manager.unregister(antigo);
+            }
+            if let Some(novo) = converter_atalho(config_atalho) {
+                let id = novo.id();
+                if manager.register(novo).is_ok() {
+                    self.hotkey_atual = Some(novo);
+                    self.hotkey_id.store(id, Ordering::Relaxed);
+                } else {
+                    self.hotkey_id.store(0, Ordering::Relaxed);
+                }
+            } else {
+                self.hotkey_id.store(0, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -244,12 +270,13 @@ impl eframe::App for CorretorApp {
             Err(_) => return,
         };
         let canal = self.canal.clone();
+        let mut novo_atalho_config: Option<config::AtalhoConfig> = None;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("Corretor Universal");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let atalho = if cfg!(target_os = "macos") { "Cmd + Alt + C" } else { "Ctrl + Alt + C" };
+                    let atalho = est.config.atalho.texto_exibicao();
                     ui.label(egui::RichText::new(format!("Atalho: {}", atalho)).weak());
                 });
             });
@@ -573,6 +600,99 @@ impl eframe::App for CorretorApp {
                         };
                         ui.label(egui::RichText::new(sistema_desc).small().weak());
                     });
+
+                    ui.add_space(8.0);
+                    let mut atalho_alterado = false;
+                    ui.group(|ui| {
+                        ui.label(egui::RichText::new("⌨️ Atalho Global do Teclado").strong());
+                        ui.label(
+                            egui::RichText::new(
+                                "Personalize a combinação de teclas para acionar o corretor instantaneamente em qualquer app:",
+                            )
+                            .weak(),
+                        );
+                        ui.horizontal(|ui| {
+                            atalho_alterado |= ui.checkbox(&mut est.config.atalho.ctrl, "Ctrl").changed();
+                            atalho_alterado |= ui
+                                .checkbox(
+                                    &mut est.config.atalho.alt,
+                                    if cfg!(target_os = "macos") { "Option" } else { "Alt" },
+                                )
+                                .changed();
+                            atalho_alterado |= ui.checkbox(&mut est.config.atalho.shift, "Shift").changed();
+                            atalho_alterado |= ui
+                                .checkbox(
+                                    &mut est.config.atalho.meta,
+                                    if cfg!(target_os = "macos") { "Cmd" } else { "Win" },
+                                )
+                                .changed();
+
+                            ui.separator();
+                            ui.label("Tecla:");
+                            egui::ComboBox::from_id_salt("combo_tecla_atalho")
+                                .selected_text(&est.config.atalho.tecla)
+                                .show_ui(ui, |ui| {
+                                    for tecla in [
+                                        "C", "A", "B", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+                                        "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+                                        "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+                                        "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+                                        "Space",
+                                    ] {
+                                        if ui.selectable_value(&mut est.config.atalho.tecla, tecla.to_string(), tecla).changed() {
+                                            atalho_alterado = true;
+                                        }
+                                    }
+                                });
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Atalho ativo: {}",
+                                    est.config.atalho.texto_exibicao()
+                                ))
+                                .strong(),
+                            );
+                            if ui.button("Restaurar padrão").clicked() {
+                                est.config.atalho = config::AtalhoConfig::default();
+                                atalho_alterado = true;
+                            }
+                        });
+                    });
+                    if atalho_alterado {
+                        let _ = est.config.salvar();
+                        let txt = est.config.atalho.texto_exibicao();
+                        est.log(format!("[Atalho] Atalho global alterado para: {}", txt));
+                        novo_atalho_config = Some(est.config.atalho.clone());
+                    }
+
+                    ui.add_space(8.0);
+                    ui.group(|ui| {
+                        ui.label(egui::RichText::new("💬 Balão Flutuante de Resultado").strong());
+                        let mut balao = est.config.balao_ativo;
+                        if ui
+                            .checkbox(
+                                &mut balao,
+                                "Exibir balão flutuante quando o campo não aceitar substituição direta",
+                            )
+                            .changed()
+                        {
+                            est.config.balao_ativo = balao;
+                            let _ = est.config.salvar();
+                            est.log(format!(
+                                "[Balão] Balão flutuante {}",
+                                if balao { "ativado" } else { "desativado" }
+                            ));
+                        }
+                        ui.label(
+                            egui::RichText::new(
+                                "Quando ativo, campos de somente leitura (PDFs, navegadores) exibem o balão flutuante \
+                                 com opções para copiar o resultado e gerar novo texto com IA diretamente.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                    });
                 }
                 AbaApp::Dicionario => {
                     ui.group(|ui| {
@@ -647,35 +767,111 @@ impl eframe::App for CorretorApp {
         deteccao::ligar(est.config.ativo && est.config.deteccao_automatica);
         drop(est);
 
+        if let Some(cfg) = novo_atalho_config {
+            self.recarregar_atalho(&cfg);
+        }
+
         ctx.request_repaint_after(Duration::from_millis(150));
     }
 }
 
-fn modificador_atalho() -> Modifiers {
-    #[cfg(target_os = "macos")]
-    {
-        Modifiers::META | Modifiers::ALT
+fn converter_atalho(config: &config::AtalhoConfig) -> Option<HotKey> {
+    let mut mods = Modifiers::empty();
+    if config.ctrl {
+        mods |= Modifiers::CONTROL;
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        Modifiers::CONTROL | Modifiers::ALT
+    if config.alt {
+        mods |= Modifiers::ALT;
     }
+    if config.shift {
+        mods |= Modifiers::SHIFT;
+    }
+    if config.meta {
+        mods |= Modifiers::META;
+    }
+
+    let code = match config.tecla.to_ascii_uppercase().as_str() {
+        "A" => Code::KeyA,
+        "B" => Code::KeyB,
+        "C" => Code::KeyC,
+        "D" => Code::KeyD,
+        "E" => Code::KeyE,
+        "F" => Code::KeyF,
+        "G" => Code::KeyG,
+        "H" => Code::KeyH,
+        "I" => Code::KeyI,
+        "J" => Code::KeyJ,
+        "K" => Code::KeyK,
+        "L" => Code::KeyL,
+        "M" => Code::KeyM,
+        "N" => Code::KeyN,
+        "O" => Code::KeyO,
+        "P" => Code::KeyP,
+        "Q" => Code::KeyQ,
+        "R" => Code::KeyR,
+        "S" => Code::KeyS,
+        "T" => Code::KeyT,
+        "U" => Code::KeyU,
+        "V" => Code::KeyV,
+        "W" => Code::KeyW,
+        "X" => Code::KeyX,
+        "Y" => Code::KeyY,
+        "Z" => Code::KeyZ,
+        "1" => Code::Digit1,
+        "2" => Code::Digit2,
+        "3" => Code::Digit3,
+        "4" => Code::Digit4,
+        "5" => Code::Digit5,
+        "6" => Code::Digit6,
+        "7" => Code::Digit7,
+        "8" => Code::Digit8,
+        "9" => Code::Digit9,
+        "0" => Code::Digit0,
+        "F1" => Code::F1,
+        "F2" => Code::F2,
+        "F3" => Code::F3,
+        "F4" => Code::F4,
+        "F5" => Code::F5,
+        "F6" => Code::F6,
+        "F7" => Code::F7,
+        "F8" => Code::F8,
+        "F9" => Code::F9,
+        "F10" => Code::F10,
+        "F11" => Code::F11,
+        "F12" => Code::F12,
+        "SPACE" | "ESPAÇO" => Code::Space,
+        _ => Code::KeyC,
+    };
+
+    Some(HotKey::new(if mods.is_empty() { None } else { Some(mods) }, code))
 }
 
-fn criar_atalho(canal: std::sync::mpsc::Sender<Mensagem>) -> Option<GlobalHotKeyManager> {
+fn criar_atalho(
+    canal: std::sync::mpsc::Sender<Mensagem>,
+    config_atalho: &config::AtalhoConfig,
+) -> (Option<GlobalHotKeyManager>, Option<HotKey>, Arc<AtomicU32>) {
+    let hotkey_id = Arc::new(AtomicU32::new(0));
     let manager = match GlobalHotKeyManager::new() {
         Ok(m) => m,
-        Err(_) => return None,
+        Err(_) => return (None, None, hotkey_id),
     };
-    let hotkey = HotKey::new(Some(modificador_atalho()), Code::KeyC);
-    let _ = manager.register(hotkey);
-    let id = hotkey.id();
+
+    let hotkey = converter_atalho(config_atalho);
+    if let Some(hk) = &hotkey {
+        let id = hk.id();
+        hotkey_id.store(id, Ordering::Relaxed);
+        let _ = manager.register(*hk);
+    }
+
+    let id_atual = Arc::clone(&hotkey_id);
     GlobalHotKeyEvent::set_event_handler(Some(move |evento: GlobalHotKeyEvent| {
-        if evento.id == id && evento.state == HotKeyState::Pressed {
+        let atual = id_atual.load(Ordering::Relaxed);
+        if atual != 0 && evento.id == atual && evento.state == HotKeyState::Pressed {
             let _ = canal.send(Mensagem::Hotkey);
         }
     }));
-    Some(manager)
+
+    (Some(manager), hotkey, hotkey_id)
 }
 
 fn main() -> eframe::Result<()> {
@@ -720,10 +916,10 @@ fn main() -> eframe::Result<()> {
         "Corretor Ortográfico Universal",
         opcoes,
         Box::new(move |cc| {
-            let (ativo, deteccao, autostart) = estado_gui
+            let (ativo, deteccao, autostart, atalho_config) = estado_gui
                 .lock()
-                .map(|c| (c.config.ativo, c.config.deteccao_automatica, c.config.iniciar_com_sistema))
-                .unwrap_or((true, true, false));
+                .map(|c| (c.config.ativo, c.config.deteccao_automatica, c.config.iniciar_com_sistema, c.config.atalho.clone()))
+                .unwrap_or((true, true, false, config::AtalhoConfig::default()));
 
             let bandeja = match tray::Bandeja::criar(ativo, deteccao, autostart) {
                 Ok(bandeja) => {
@@ -736,12 +932,14 @@ fn main() -> eframe::Result<()> {
                 }
             };
 
-            let hotkey_manager = criar_atalho(canal_gui.clone());
+            let (hotkey_manager, hotkey_atual, hotkey_id) = criar_atalho(canal_gui.clone(), &atalho_config);
             Ok(Box::new(CorretorApp::new(
                 cc,
                 Arc::clone(&estado_gui),
                 canal_gui.clone(),
                 hotkey_manager,
+                hotkey_atual,
+                hotkey_id,
                 bandeja,
             )))
         }),

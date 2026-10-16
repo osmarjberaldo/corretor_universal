@@ -1,6 +1,58 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
+pub struct AtalhoConfig {
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub meta: bool,
+    pub tecla: String,
+}
+
+impl Default for AtalhoConfig {
+    fn default() -> Self {
+        if cfg!(target_os = "macos") {
+            Self {
+                ctrl: false,
+                alt: true,
+                shift: false,
+                meta: true,
+                tecla: "C".to_string(),
+            }
+        } else {
+            Self {
+                ctrl: true,
+                alt: true,
+                shift: false,
+                meta: false,
+                tecla: "C".to_string(),
+            }
+        }
+    }
+}
+
+impl AtalhoConfig {
+    pub fn texto_exibicao(&self) -> String {
+        let mut partes = Vec::new();
+        if self.ctrl {
+            partes.push("Ctrl");
+        }
+        if self.alt {
+            partes.push(if cfg!(target_os = "macos") { "Option" } else { "Alt" });
+        }
+        if self.shift {
+            partes.push("Shift");
+        }
+        if self.meta {
+            partes.push(if cfg!(target_os = "macos") { "Cmd" } else { "Win" });
+        }
+        partes.push(&self.tecla);
+        partes.join(" + ")
+    }
+}
+
 /// Configuração persistida em disco. Fica em:
 /// - Windows: %APPDATA%\corretor_universal\config.json
 /// - macOS:   ~/Library/Application Support/corretor_universal/config.json
@@ -14,6 +66,10 @@ pub struct Config {
     pub deteccao_automatica: bool,
     /// Iniciar automaticamente com o sistema operacional (Windows / macOS / Linux).
     pub iniciar_com_sistema: bool,
+    /// Exibir balão flutuante quando o campo não aceitar substituição direta.
+    pub balao_ativo: bool,
+    /// Configuração personalizada do atalho global de teclado.
+    pub atalho: AtalhoConfig,
     /// Trocou o texto no lugar (Ctrl+V) ou mostrou o balão na última ação.
     pub dicionario: Vec<String>,
     /// Endpoint compatível com OpenAI (".../v1" ou a URL completa de /chat/completions).
@@ -31,6 +87,8 @@ impl Default for Config {
             ativo: true,
             deteccao_automatica: true,
             iniciar_com_sistema: false,
+            balao_ativo: true,
+            atalho: AtalhoConfig::default(),
             dicionario: Vec::new(),
             ia_url: "https://api.openai.com/v1".to_string(),
             ia_chave: String::new(),

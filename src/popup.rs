@@ -44,6 +44,8 @@ pub const ACAO_FECHAR: u32 = 14;
 pub const ACAO_REVISAR: u32 = 15;
 /// Abre a janela na aba de histórico de correções (10 recentes).
 pub const ACAO_HISTORICO: u32 = 16;
+/// Botão "Gerar novo texto com IA" do balão.
+pub const ACAO_BALAO_IA: u32 = 17;
 /// Ids `ACAO_SUGESTAO_BASE + i` aplicam **só** a alternativa `i` do primeiro
 /// aviso da análise (é o que a seta do "Corrigir" oferece).
 pub const ACAO_SUGESTAO_BASE: u32 = 100;
@@ -1201,7 +1203,7 @@ mod implementacao {
         destruir(&mut antigos);
 
         let margem = px(12.0, r.escala);
-        let largura = px(520.0, r.escala);
+        let largura = px(560.0, r.escala);
         let altura_texto = px(132.0, r.escala);
         let altura_botao = px(32.0, r.escala);
         let altura = altura_texto + altura_botao + margem * 3;
@@ -1214,6 +1216,10 @@ mod implementacao {
 
         let hdc = GetDC(janela);
         let largura_botao = largura_texto(hdc, r.fonte_item, "Copiar resultado")
+            + px(11.0, r.escala) * 2
+            + px(16.0, r.escala)
+            + px(7.0, r.escala);
+        let largura_botao_ia = largura_texto(hdc, r.fonte_item, "Gerar novo texto com IA")
             + px(11.0, r.escala) * 2
             + px(16.0, r.escala)
             + px(7.0, r.escala);
@@ -1234,6 +1240,23 @@ mod implementacao {
             altura_botao,
         ) {
             novos.push(botao);
+        }
+
+        if let Some(botao_ia) = criar_item(
+            janela,
+            super::ACAO_BALAO_IA,
+            "Gerar novo texto com IA",
+            Icone::Estrela,
+            false,
+            false,
+            false,
+            Vec::new(),
+            margem + largura_botao + px(8.0, r.escala),
+            altura_texto + margem * 2,
+            largura_botao_ia,
+            altura_botao,
+        ) {
+            novos.push(botao_ia);
         }
 
         com_estado(|e| {

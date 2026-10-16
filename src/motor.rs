@@ -199,6 +199,11 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
                     copiar_resultado(estado, popups);
                     return;
                 }
+                // Botão "Gerar novo texto com IA" do balão:
+                if id == crate::popup::ACAO_BALAO_IA {
+                    gerar_ia_do_balao(estado, popups, contexto.posicao);
+                    return;
+                }
                 // "⋮" e "✕" mexem no app, não no texto: não passam pelo worker.
                 if acao_controle(id, estado, popups) {
                     return;
@@ -314,7 +319,9 @@ pub fn itens_menu(analise: &[Aviso], analisando: bool) -> Vec<ItemBarra> {
 
     vec![
         ItemBarra::marca(),
-        ItemBarra::acao(ACAO_CORRIGIR, "Corrigir", Icone::Corrigir).com_divisor(),
+        ItemBarra::acao(ACAO_CORRIGIR, "Corrigir", Icone::Corrigir)
+            .com_divisor()
+            .com_submenu(submenu_corrigir),
         ItemBarra::acao(ACAO_MELHORAR, "", Icone::Estrela)
             .somente_icone()
             .com_seta()
@@ -628,6 +635,46 @@ fn copiar_resultado(estado: &Estado, popups: &Arc<Popups>) {
     popups.fechar();
 }
 
+/// Gera novo texto com IA a partir do conteúdo exibido no balão flutuante.
+fn gerar_ia_do_balao(estado: &Estado, popups: &Arc<Popups>, pos: (i32, i32)) {
+    let (config, texto) = match estado.lock() {
+        Ok(c) => (c.config.clone(), c.resultado.clone().unwrap_or_default()),
+        Err(_) => return,
+    };
+    if texto.trim().is_empty() {
+        logar(estado, "[Aviso] Nenhum texto disponível para gerar com IA.");
+        return;
+    }
+    if !config.ia_configurada() {
+        logar(estado, "[IA] Configure a IA na aba Configurações antes de usar.");
+        popups.balao(pos.0, pos.1, "Configure a URL e modelo de IA nas Opções do app.".to_string());
+        return;
+    }
+
+    logar(estado, format!("[IA] Gerando novo texto para o balão: {}", resumir(&texto)));
+    popups.balao(pos.0, pos.1, "⏳ Gerando novo texto com IA...".to_string());
+
+    let estado_clone = Arc::clone(estado);
+    let popups_clone = Arc::clone(popups);
+    std::thread::spawn(move || {
+        match crate::ia::melhorar(&texto, &config, crate::ia::Estilo::Padrao) {
+            Ok(novo_texto) => {
+                if let Ok(mut c) = estado_clone.lock() {
+                    c.resultado = Some(novo_texto.clone());
+                    c.historico.adicionar(&texto, &novo_texto, "IA (Balão)");
+                    c.log(format!("[IA] Novo texto gerado no balão: {}", resumir(&novo_texto)));
+                }
+                let _ = crate::aplicacao::copiar_para_clipboard(&novo_texto);
+                popups_clone.balao(pos.0, pos.1, novo_texto);
+            }
+            Err(e) => {
+                logar(&estado_clone, format!("[Erro IA] Falha ao gerar novo texto: {}", e));
+                popups_clone.balao(pos.0, pos.1, format!("Falha na IA:\n{}", e));
+            }
+        }
+    });
+}
+
 /// Liga/desliga a captura (mesmo efeito do item da bandeja).
 fn alternar_captura(estado: &Estado, popups: &Arc<Popups>) {
     let pausou = if let Ok(mut c) = estado.lock() {
@@ -880,15 +927,20 @@ fn executar_acao(
 }
 
 /// Entrega o texto final: cola no campo (quando é editável) ou copia e mostra
-/// o balão. Usado pelo "Corrigir", pelo "Melhorar" e pela seta com alternativas.
+/// o balão (se ativado). Usado pelo "Corrigir", pelo "Melhorar" e pela seta com alternativas.
 fn entregar(estado: &Estado, popups: &Popups, editavel: bool, final_texto: &str) -> Result<(), ()> {
+    let balao_ativo = estado.lock().map(|c| c.config.balao_ativo).unwrap_or(true);
+
     if editavel && Popups::suportado() {
         match crate::aplicacao::substituir_selecao(estado, final_texto) {
             Ok(true) => logar(estado, format!("Aplicado no campo: {}", resumir(final_texto))),
             Ok(false) => {
-                logar(estado, "Campo não aceitou a colagem; resultado mostrado no balão.");
-                let (x, y) = posicao_cursor();
-                popups.balao(x, y, final_texto.to_string());
+                logar(estado, "Campo não aceitou a colagem; resultado copiado para a área de transferência.");
+                let _ = crate::aplicacao::copiar_para_clipboard(final_texto);
+                if balao_ativo {
+                    let (x, y) = posicao_cursor();
+                    popups.balao(x, y, final_texto.to_string());
+                }
             }
             Err(e) => logar(estado, format!("[Erro] {}", e)),
         }
@@ -903,8 +955,10 @@ fn entregar(estado: &Estado, popups: &Popups, editavel: bool, final_texto: &str)
         estado,
         format!("Campo não editável; copiado: {}", resumir(final_texto)),
     );
-    let (x, y) = posicao_cursor();
-    popups.balao(x, y, final_texto.to_string());
+    if balao_ativo {
+        let (x, y) = posicao_cursor();
+        popups.balao(x, y, final_texto.to_string());
+    }
     Ok(())
 }
 

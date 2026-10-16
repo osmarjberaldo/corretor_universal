@@ -27,6 +27,12 @@ estava, e não no popup (as janelas são criadas com `WS_EX_NOACTIVATE`).
 
 ## Novidades e Recursos Recentes
 
+* ⌨️ **Atalho Global do Teclado 100% Personalizável**:
+  * Escolha qualquer combinação de modificadores (`Ctrl`, `Alt/Option`, `Shift`, `Win/Cmd`) e teclas (`A-Z`, `0-9`, `F1-F12`, `Space`) diretamente na aba *Configurações*.
+  * O registro no sistema é atualizado instantaneamente sem necessidade de reiniciar o aplicativo. Botão para restaurar o padrão (`Ctrl+Alt+C` ou `Cmd+Alt+C`).
+* 💬 **Balão Flutuante Configurável com Suporte a IA**:
+  * **Ativar/Desativar**: Opção para habilitar ou desabilitar a exibição do balão flutuante quando o campo não aceitar substituição direta.
+  * **✨ Gerar Novo Texto com IA no Balão**: Botão dedicado diretamente na janela do balão (*"Gerar novo texto com IA"*) para reescrever o resultado no estilo e prompt configurados, copiando para a área de transferência e salvando no histórico.
 * 🚀 **Inicialização Automática com o Sistema (Windows, macOS e Linux)**:
   * **Windows**: Integração nativa com o Registro (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`), sem exigir permissões de administrador.
   * **macOS**: Integração automática com LaunchAgents (`~/Library/LaunchAgents/com.corretoruniversal.app.plist`).
@@ -248,6 +254,14 @@ Para que o atalho global funcione entre aplicativos no macOS:
   "ativo": true,
   "deteccao_automatica": true,
   "iniciar_com_sistema": true,
+  "balao_ativo": true,
+  "atalho": {
+    "ctrl": true,
+    "alt": true,
+    "shift": false,
+    "meta": false,
+    "tecla": "C"
+  },
   "dicionario": ["rust"],
   "ia_url": "https://api.openai.com/v1",
   "ia_chave": "sua-chave",
