@@ -1,5 +1,15 @@
 # Corretor Ortográfico Universal (Rust)
 
+<p align="left">
+  <a href="https://www.paypal.com/donate/?hosted_button_id=HW9QS2TXX9ZYQ"><img src="https://img.shields.io/badge/Donate-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="PayPal Donate"></a>
+  &nbsp;
+  <a href="https://livepix.gg/tudoxbox"><img src="https://img.shields.io/badge/Apoiar-Livepix-00D26A?style=for-the-badge&logo=pix&logoColor=white" alt="Livepix"></a>
+  &nbsp;
+  <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License: MIT">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Plataformas-Windows%20%7C%20macOS%20%7C%20Linux-2ea44f?style=for-the-badge" alt="Plataformas">
+</p>
+
 > **Projeto 100% Gratuito e de Código Aberto (Open Source - Licença MIT)**  
 > 🤖 **Desenvolvido com o auxílio de Inteligência Artificial (IA)**.  
 > ✨ Sinta-se livre para usar, estudar, modificar e compartilhar como e onde quiser!  
@@ -55,11 +65,23 @@ Desktop spellchecking is notoriously fragmented: it exists in some applications 
 
 ---
 
+## 🖼️ Capturas de Tela do Aplicativo (Screenshots)
+
+| 🪄 Barra Flutuante em Ação (Texto Selecionado) | ⚙️ Janela Principal (Configurações, IA e Opções) |
+| :---: | :---: |
+| <img src="assets/barra_flutuante.png" alt="Barra Flutuante em Ação" width="340"/> | <img src="assets/app_janela.png" alt="Janela Principal do Aplicativo" width="500"/> |
+
+---
+
 ## Como usar a barra flutuante
 
 Selecione um texto (arrastando o mouse ou dando duplo clique numa palavra) e uma **barra de ações aparece sozinha**
 no cursor, com acabamento nativo elegante (ícones em vetor, tipografia límpida, separadores sutis,
 botão de cópia, menu de varinha mágica para IA, "⋮" e "✕"):
+
+<p align="center">
+  <img src="assets/barra_flutuante.png" alt="Barra Flutuante Detalhada" width="340"/>
+</p>
 
 ```
 [ A ] │ [ A✓ Corrigir ]  [ 🪄 ⌄ ]  [ ❐ ] │ [ ⋮ ]  [ ✕ ]
@@ -437,3 +459,45 @@ python tools/mock_ia.py 8137            # responde em http://127.0.0.1:8137/v1
   casos o atalho ainda tenta corrigir e colar.
 - Uso de memória: ~75–135 MB de working set (egui/glow + OpenGL), bem acima dos
   15 MB citados no projeto original.
+
+---
+
+## 💖 Apoie o Projeto / Donations & Support
+
+Este projeto é **100% gratuito e de código aberto (Open Source)**. Se o aplicativo tem sido útil para economizar seu tempo, aprimorar seus textos e agilizar seu fluxo de trabalho no dia a dia, você pode apoiar financeiramente a manutenção e criação de novos recursos com uma doação voluntária de qualquer valor!
+
+*This project is **100% free and open-source**. If it saves you time and improves your daily writing, consider supporting its continuous maintenance and features with a voluntary donation!*
+
+<div align="center">
+
+<br/>
+
+<a href="https://www.paypal.com/donate/?hosted_button_id=HW9QS2TXX9ZYQ" target="_blank">
+  <img src="https://img.shields.io/badge/Doar%20via-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="Doar pelo PayPal" height="42"/>
+</a>
+&nbsp;&nbsp;&nbsp;&nbsp;
+<a href="https://livepix.gg/tudoxbox" target="_blank">
+  <img src="https://img.shields.io/badge/Apoiar%20via-Livepix%20(Pix)-00D26A?style=for-the-badge&logo=pix&logoColor=white" alt="Apoiar com Livepix" height="42"/>
+</a>
+
+<br/><br/>
+
+### 📱 Escaneie o QR Code do PayPal para Doar:
+
+<a href="https://www.paypal.com/donate/?hosted_button_id=HW9QS2TXX9ZYQ" target="_blank">
+  <img src="assets/qrcode_doacao.png" alt="QR Code PayPal para Doação" width="180"/>
+</a>
+
+<br/><br/>
+
+| Método / Plataforma | Link de Doação |
+| :--- | :--- |
+| 💳 **PayPal** | [https://www.paypal.com/donate/?hosted_button_id=HW9QS2TXX9ZYQ](https://www.paypal.com/donate/?hosted_button_id=HW9QS2TXX9ZYQ) |
+| ⚡ **Livepix (Pix Instantâneo)** | [https://livepix.gg/tudoxbox](https://livepix.gg/tudoxbox) |
+
+<br/>
+
+**Muito obrigado pelo seu apoio! / Thank you very much for your support!** ❤️
+
+</div>
+
