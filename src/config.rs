@@ -68,6 +68,9 @@ pub struct Config {
     pub iniciar_com_sistema: bool,
     /// Exibir balão flutuante quando o campo não aceitar substituição direta.
     pub balao_ativo: bool,
+    /// Ação ao clicar no botão fechar (X) da janela:
+    /// perguntar (exibe aviso), minimizar para a bandeja ou encerrar.
+    pub acao_ao_fechar: AcaoFechar,
     /// Configuração personalizada do atalho global de teclado.
     pub atalho: AtalhoConfig,
     /// Trocou o texto no lugar (Ctrl+V) ou mostrou o balão na última ação.
@@ -80,6 +83,22 @@ pub struct Config {
     pub ia_prompt: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AcaoFechar {
+    #[serde(rename = "perguntar")]
+    Perguntar,
+    #[serde(rename = "minimizar")]
+    Minimizar,
+    #[serde(rename = "encerrar")]
+    Encerrar,
+}
+
+impl Default for AcaoFechar {
+    fn default() -> Self {
+        Self::Perguntar
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -88,6 +107,7 @@ impl Default for Config {
             deteccao_automatica: true,
             iniciar_com_sistema: false,
             balao_ativo: true,
+            acao_ao_fechar: AcaoFechar::Perguntar,
             atalho: AtalhoConfig::default(),
             dicionario: Vec::new(),
             ia_url: "https://api.openai.com/v1".to_string(),

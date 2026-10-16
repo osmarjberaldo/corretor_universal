@@ -5,6 +5,58 @@
 > ✨ Sinta-se livre para usar, estudar, modificar e compartilhar como e onde quiser!  
 > 💧 **Novo visual**: barra flutuante translúcida estilo gota d'água / pílula (*Apple Liquid Glass*), com reflexo especular, ícones nítidos e detecção inteligente que dispara **apenas** quando houver texto realmente selecionado.
 
+---
+
+## 🎯 Para que serve o aplicativo? / What is this app for?
+
+### 🇧🇷 Em Português (PT-BR)
+
+O **Corretor Ortográfico Universal** é um assistente de produtividade para todo o sistema que traz **correção ortográfica, gramatical e aprimoramento de texto com Inteligência Artificial para qualquer aplicativo do seu computador** (Windows, macOS e Linux).
+
+#### 💡 Qual problema ele resolve?
+Na maioria dos sistemas operacionais, a correção ortográfica é fragmentada: funciona em alguns programas e não funciona em outros. Muitas vezes você precisa abrir o navegador, acessar um site de correção ou chat de IA, colar o texto, aguardar, copiar de volta e colar no seu programa.
+
+O **Corretor Universal elimina essa fricção**: ele fica ativo silenciosamente em segundo plano (junto ao relógio do sistema) e funciona de maneira global e transparente em:
+* 💬 **Mensageiros**: WhatsApp Desktop, Telegram, Discord, Slack, Microsoft Teams
+* 🌐 **Navegadores**: Google Chrome, Microsoft Edge, Mozilla Firefox, Brave, Opera
+* 📝 **Editores e Notas**: Microsoft Word, Notion, Obsidian, Bloco de Notas, LibreOffice
+* 💻 **Desenvolvimento**: Visual Studio Code, IDEs JetBrains, terminais
+* 📧 **E-mails**: Outlook, Thunderbird, webmails
+
+#### 🚀 Principais Utilidades:
+1. **Correção Direta no Lugar (In-Place)**: Selecione o texto e clique em **A✓ Corrigir** (ou pressione o atalho global `Ctrl+Alt+C`). O texto é corrigido instantaneamente no próprio campo, sem necessidade de recortar ou colar manualmente.
+2. **Reescrita e Tom com IA**: Melhore a clareza, torne o tom mais formal, simplifique ou encurte frases através do menu da varinha mágica (**🪄**). Compatível com OpenAI, Ollama (modelos 100% locais/offline), Groq, Gemini e qualquer provedor compatível.
+3. **Sem Roubar o Foco**: A barra surge suavemente ao lado do cursor do mouse e executa as ações mantendo o foco da sua janela e cursor originais intactos.
+4. **Suporte a Áreas de Leitura (PDFs e Sites)**: Quando um campo não é editável, o resultado é exibido em um balão escuro com botão para copiar a resposta com 1 clique.
+5. **Dicionário Pessoal e Histórico**: Proteja termos técnicos, gírias e nomes próprios com um clique, e consulte facilmente suas últimas 10 correções.
+
+---
+
+### 🇺🇸 In English
+
+The **Universal Spellchecker** is a lightweight, system-wide productivity assistant that brings **instant grammar proofreading, spellchecking, and AI-powered text transformation to every application on your computer** (Windows, macOS, and Linux).
+
+#### 💡 What problem does it solve?
+Desktop spellchecking is notoriously fragmented: it exists in some applications but is completely absent in others. Users constantly waste time switching windows, navigating to an online proofreader or AI website, pasting text, waiting, copying the result, and pasting it back into their work.
+
+**Universal Spellchecker removes this friction entirely**: running silently in your system tray (next to the clock), it provides seamless, global integration across:
+* 💬 **Messaging Apps**: WhatsApp Desktop, Telegram, Discord, Slack, Microsoft Teams
+* 🌐 **Web Browsers**: Google Chrome, Microsoft Edge, Mozilla Firefox, Brave, Opera
+* 📝 **Notes & Office**: Microsoft Word, Notion, Obsidian, Notepad, LibreOffice
+* 💻 **Dev Environments**: Visual Studio Code, JetBrains IDEs, terminals
+* 📧 **Email Clients**: Outlook, Thunderbird, and webmail clients
+
+#### 🚀 Key Features & Capabilities:
+1. **Instant In-Place Text Replacement**: Select any text and click **A✓ Corrigir** (or press the global hotkey `Ctrl+Alt+C` / `Cmd+Opt+C`). Your text is corrected directly inside the target field without manual clipboard juggling.
+2. **AI Text Rewriting & Tone**: Enhance clarity, adjust tone to formal, simplify, or shorten messages using the Magic Wand menu (**🪄**). Works with OpenAI, Ollama (100% private offline local models), Groq, Gemini, or any OpenAI-compatible API.
+3. **Zero Focus Stealing**: The modern Apple Aqua / Liquid Glass floating action bar appears gently near your cursor without stealing keyboard or window focus from your active app.
+4. **Read-Only / PDF Support**: For uneditable fields (PDF viewers, web articles), results appear in a sleek floating pop-up card with 1-click copy.
+5. **Custom Dictionary & History**: Whitelist technical terms, code keywords, and proper names, and review your 10 most recent corrections anytime.
+
+---
+
+## Como usar a barra flutuante
+
 Selecione um texto (arrastando o mouse ou dando duplo clique numa palavra) e uma **barra de ações aparece sozinha**
 no cursor, com acabamento nativo elegante (ícones em vetor, tipografia límpida, separadores sutis,
 botão de cópia, menu de varinha mágica para IA, "⋮" e "✕"):
@@ -49,7 +101,9 @@ estava, e não no popup (as janelas são criadas com `WS_EX_NOACTIVATE`).
   * **✕**: Cruz fina, nítida e simétrica.
 * 📜 **Histórico Persistente (10 recentes)**: Salva automaticamente as últimas 10 correções em `%APPDATA%\corretor_universal\historico.json`. Acompanhe original vs. corrigido, data/hora, tipo de motor (LanguageTool / IA) e copie facilmente.
 * 🤖 **Fallback Automático para IA**: Se o serviço público LanguageTool estiver indisponível ou sofrer com limite de requisições, o motor recorre à sua IA configurada de modo transparente.
-* 🔄 **Reinício Automático Opcional**: Opção na aba *Configurações* para reiniciar o app automaticamente ao salvar novas credenciais/modelos de IA, recarregando conexões imediatamente.
+* 🪟 **Aviso de Confirmação ao Fechar (Fechar vs. Minimizar para o Relógio)**:
+  * Ao clicar no botão fechar (`✕`) da janela, o app exibe uma janela de confirmação perguntando se você deseja realmente fechar/encerrar o aplicativo ou minimizá-lo para os ícones de segundo plano junto ao relógio (bandeja do sistema).
+  * Opção de marcar *"Lembrar minha decisão"*, além de controle direto na aba *⚙️ IA & Opções* (Sempre perguntar, Minimizar para a bandeja ou Fechar de vez).
 * 🎯 **Botão de Teste Visual**: Na aba *Teste e Avisos*, utilize o botão **`🎯 Testar Barra Flutuante Agora`** para abrir a barra instantaneamente na posição do mouse e inspecionar os ícones e efeitos de hover.
 
 ## Revisão aviso por aviso (como no LanguageTool)
@@ -80,8 +134,10 @@ colado: aparece um **balão** escuro com o resultado e o botão **Copiar resulta
 (que copia o resultado já obtido, sem refazer a consulta).
 
 O app também fica **sempre ativo na bandeja** (ícone perto do relógio, menu
-"Abrir / Captura ativa / Menu ao selecionar texto / Sair"). Fechar a janela só
-esconde — para sair de verdade use **Sair** no menu da bandeja.
+"Abrir / Captura ativa / Menu ao selecionar texto / Sair"). Ao clicar no botão
+fechar (**✕**) da janela, o app exibe um **aviso** perguntando se você prefere
+**minimizar para a bandeja** (ícones de segundo plano junto ao relógio) ou **fechar o app**
+de verdade, com opção de salvar essa escolha.
 
 O atalho global `Ctrl+Alt+C` (`Cmd+Alt+C` no macOS) continua funcionando e abre
 a mesma barra.
@@ -255,6 +311,7 @@ Para que o atalho global funcione entre aplicativos no macOS:
   "deteccao_automatica": true,
   "iniciar_com_sistema": true,
   "balao_ativo": true,
+  "acao_ao_fechar": "perguntar",
   "atalho": {
     "ctrl": true,
     "alt": true,

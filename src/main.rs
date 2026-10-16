@@ -45,6 +45,8 @@ struct CorretorApp {
     saindo: bool,
     aba_ativa: AbaApp,
     reiniciar_apos_salvar: bool,
+    mostrar_modal_fechar: bool,
+    lembrar_escolha_fechar: bool,
 }
 
 impl CorretorApp {
@@ -73,6 +75,8 @@ impl CorretorApp {
             saindo: false,
             aba_ativa: AbaApp::Historico,
             reiniciar_apos_salvar: true,
+            mostrar_modal_fechar: false,
+            lembrar_escolha_fechar: false,
         }
     }
 
@@ -247,16 +251,34 @@ fn painel_avisos(
 
 impl CorretorApp {
     fn janela(&mut self, ctx: &egui::Context) {
-        // Fechar a janela manda para a bandeja (o app continua ativo).
+        // Trata o clique no botão fechar (X) da janela.
         let pedido_fechar = ctx.input(|i| i.viewport().close_requested());
         if pedido_fechar && !self.saindo {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            let acao = self
+                .estado
+                .lock()
+                .ok()
+                .map(|c| c.config.acao_ao_fechar)
+                .unwrap_or_default();
+            match acao {
+                config::AcaoFechar::Minimizar => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                }
+                config::AcaoFechar::Encerrar => {
+                    self.saindo = true;
+                    std::process::exit(0);
+                }
+                config::AcaoFechar::Perguntar => {
+                    self.mostrar_modal_fechar = true;
+                }
+            }
         }
 
         // Pedido de reabertura vindo da bandeja/atalho.
         let pedido = self.estado.lock().ok().and_then(|mut c| c.janela.take());
         if pedido == Some(true) {
+            self.mostrar_modal_fechar = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             ctx.request_repaint();
@@ -605,6 +627,36 @@ impl eframe::App for CorretorApp {
                     });
 
                     ui.add_space(8.0);
+                    ui.group(|ui| {
+                        ui.label(egui::RichText::new("🪟 Ação ao Clicar no Botão Fechar (✕)").strong());
+                        ui.horizontal(|ui| {
+                            let mut acao = est.config.acao_ao_fechar;
+                            let mut mudou = false;
+                            if ui.radio_value(&mut acao, config::AcaoFechar::Perguntar, "Sempre perguntar").changed() {
+                                mudou = true;
+                            }
+                            if ui.radio_value(&mut acao, config::AcaoFechar::Minimizar, "Minimizar para a bandeja (junto ao relógio)").changed() {
+                                mudou = true;
+                            }
+                            if ui.radio_value(&mut acao, config::AcaoFechar::Encerrar, "Encerrar aplicativo").changed() {
+                                mudou = true;
+                            }
+                            if mudou {
+                                est.config.acao_ao_fechar = acao;
+                                let _ = est.config.salvar();
+                                est.log(format!("[Config] Ação ao fechar alterada para: {:?}", acao));
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new(
+                                "Define se ao clicar no ✕ da janela o app exibe o aviso para confirmar se deseja fechar de vez ou minimizar para segundo plano nos ícones junto ao relógio.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                    });
+
+                    ui.add_space(8.0);
                     let mut atalho_alterado = false;
                     ui.group(|ui| {
                         ui.label(egui::RichText::new("⌨️ Atalho Global do Teclado").strong());
@@ -763,6 +815,141 @@ impl eframe::App for CorretorApp {
             }
         });
 
+        // Diálogo de confirmação ao clicar no botão fechar (X)
+        if self.mostrar_modal_fechar {
+            let screen_rect = ctx.screen_rect();
+            egui::Area::new(egui::Id::new("modal_fechar_backdrop"))
+                .fixed_pos(screen_rect.min)
+                .order(egui::Order::Foreground)
+                .show(ctx, |ui| {
+                    ui.allocate_rect(screen_rect, egui::Sense::click());
+                    ui.painter().rect_filled(
+                        screen_rect,
+                        0.0,
+                        egui::Color32::from_black_alpha(150),
+                    );
+                });
+
+            let mut fechar_dialogo = false;
+            let mut acao_escolhida: Option<config::AcaoFechar> = None;
+
+            egui::Window::new("Fechar ou Minimizar?")
+                .id(egui::Id::new("modal_fechar_janela"))
+                .collapsible(false)
+                .resizable(false)
+                .movable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .order(egui::Order::Tooltip)
+                .show(ctx, |ui| {
+                    ui.set_width(420.0);
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("❓").size(24.0));
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    egui::RichText::new("O que você deseja fazer?")
+                                        .strong()
+                                        .size(15.0),
+                                );
+                                ui.label(
+                                    egui::RichText::new(
+                                        "Você clicou no botão fechar da janela.",
+                                    )
+                                    .weak(),
+                                );
+                            });
+                        });
+
+                        ui.add_space(6.0);
+                        ui.separator();
+                        ui.add_space(6.0);
+
+                        ui.group(|ui| {
+                            ui.label(egui::RichText::new("Escolha uma opção:").strong());
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(
+                                    "• Minimizar para a bandeja:\n  O aplicativo continua rodando em segundo plano nos\n  ícones junto ao relógio (área de notificação), pronto para\n  fazer correções e responder aos atalhos.",
+                                )
+                                .weak(),
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(
+                                    "• Fechar aplicativo:\n  Encerra o Corretor Universal completamente.",
+                                )
+                                .weak(),
+                            );
+                        });
+
+                        ui.add_space(6.0);
+                        ui.checkbox(
+                            &mut self.lembrar_escolha_fechar,
+                            "Lembrar minha decisão (não perguntar novamente)",
+                        );
+
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button(
+                                    egui::RichText::new("🕒 Minimizar para a bandeja")
+                                        .color(egui::Color32::from_rgb(88, 166, 255))
+                                        .strong(),
+                                )
+                                .on_hover_text("Fica em segundo plano nos ícones junto ao relógio")
+                                .clicked()
+                            {
+                                acao_escolhida = Some(config::AcaoFechar::Minimizar);
+                            }
+
+                            if ui
+                                .button(
+                                    egui::RichText::new("✕ Fechar app")
+                                        .color(egui::Color32::from_rgb(231, 76, 60))
+                                        .strong(),
+                                )
+                                .on_hover_text("Encerra totalmente o aplicativo")
+                                .clicked()
+                            {
+                                acao_escolhida = Some(config::AcaoFechar::Encerrar);
+                            }
+
+                            if ui
+                                .button("Cancelar")
+                                .on_hover_text("Volta ao app sem fechar nem minimizar")
+                                .clicked()
+                            {
+                                fechar_dialogo = true;
+                            }
+                        });
+                    });
+                });
+
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                fechar_dialogo = true;
+            }
+
+            if let Some(acao) = acao_escolhida {
+                if self.lembrar_escolha_fechar {
+                    est.config.acao_ao_fechar = acao;
+                    let _ = est.config.salvar();
+                }
+                self.mostrar_modal_fechar = false;
+                match acao {
+                    config::AcaoFechar::Minimizar => {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                    }
+                    config::AcaoFechar::Encerrar => {
+                        self.saindo = true;
+                        std::process::exit(0);
+                    }
+                    config::AcaoFechar::Perguntar => {}
+                }
+            } else if fechar_dialogo {
+                self.mostrar_modal_fechar = false;
+            }
+        }
+
         // Mantém o estado da bandeja e da detecção iguais à configuração.
         if let Some(bandeja) = &self.bandeja {
             bandeja.sincronizar(est.config.ativo, est.config.deteccao_automatica, est.config.iniciar_com_sistema);
@@ -878,6 +1065,7 @@ fn criar_atalho(
 }
 
 fn main() -> eframe::Result<()> {
+    let _ = std::fs::write("app_debug.log", "Iniciando main...\n");
     std::panic::set_hook(Box::new(|info| {
         let msg = format!("CRASH: {:?}\n", info);
         let _ = std::fs::write("corretor_crash.log", msg);
