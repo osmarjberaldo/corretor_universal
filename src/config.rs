@@ -12,6 +12,8 @@ pub struct Config {
     pub ativo: bool,
     /// Mostra o menu sozinho quando um texto é selecionado com o mouse.
     pub deteccao_automatica: bool,
+    /// Iniciar automaticamente com o sistema operacional (Windows / macOS / Linux).
+    pub iniciar_com_sistema: bool,
     /// Trocou o texto no lugar (Ctrl+V) ou mostrou o balão na última ação.
     pub dicionario: Vec<String>,
     /// Endpoint compatível com OpenAI (".../v1" ou a URL completa de /chat/completions).
@@ -28,6 +30,7 @@ impl Default for Config {
             idioma: "pt-BR".to_string(),
             ativo: true,
             deteccao_automatica: true,
+            iniciar_com_sistema: false,
             dicionario: Vec::new(),
             ia_url: "https://api.openai.com/v1".to_string(),
             ia_chave: String::new(),

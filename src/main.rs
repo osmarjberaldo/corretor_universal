@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // Oculta o console no Windows em modo release
 
 mod aplicacao;
+mod autostart;
 mod config;
 mod correcao;
 mod deteccao;
@@ -540,6 +541,38 @@ impl eframe::App for CorretorApp {
                             }
                         });
                     });
+
+                    ui.add_space(8.0);
+                    ui.group(|ui| {
+                        ui.label(egui::RichText::new("🚀 Inicialização Automática").strong());
+                        let mut autostart = est.config.iniciar_com_sistema;
+                        if ui
+                            .checkbox(
+                                &mut autostart,
+                                "Iniciar o Corretor Universal automaticamente com o sistema (Windows / macOS / Linux)",
+                            )
+                            .changed()
+                        {
+                            est.config.iniciar_com_sistema = autostart;
+                            match autostart::configurar(autostart) {
+                                Ok(msg) => {
+                                    let _ = est.config.salvar();
+                                    est.log(format!("[Inicialização] {}", msg));
+                                }
+                                Err(e) => {
+                                    est.log(format!("[Erro Inicialização] {}", e));
+                                }
+                            }
+                        }
+                        let sistema_desc = if cfg!(target_os = "windows") {
+                            "Integração nativa com o Registro do Windows (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run)."
+                        } else if cfg!(target_os = "macos") {
+                            "Integração nativa com o LaunchAgents do macOS (~/Library/LaunchAgents)."
+                        } else {
+                            "Integração nativa com o XDG Autostart do Linux (~/.config/autostart)."
+                        };
+                        ui.label(egui::RichText::new(sistema_desc).small().weak());
+                    });
                 }
                 AbaApp::Dicionario => {
                     ui.group(|ui| {
@@ -609,7 +642,7 @@ impl eframe::App for CorretorApp {
 
         // Mantém o estado da bandeja e da detecção iguais à configuração.
         if let Some(bandeja) = &self._bandeja {
-            bandeja.sincronizar(est.config.ativo, est.config.deteccao_automatica);
+            bandeja.sincronizar(est.config.ativo, est.config.deteccao_automatica, est.config.iniciar_com_sistema);
         }
         deteccao::ligar(est.config.ativo && est.config.deteccao_automatica);
         drop(est);
@@ -666,6 +699,9 @@ fn main() -> eframe::Result<()> {
     }
 
     let config = Config::carregar();
+    if config.iniciar_com_sistema {
+        autostart::sincronizar(true);
+    }
     let estado: Estado = Arc::new(Mutex::new(Compartilhado::novo(config)));
     let (canal, _popups) = motor::iniciar(Arc::clone(&estado));
 
@@ -684,12 +720,12 @@ fn main() -> eframe::Result<()> {
         "Corretor Ortográfico Universal",
         opcoes,
         Box::new(move |cc| {
-            let (ativo, deteccao) = estado_gui
+            let (ativo, deteccao, autostart) = estado_gui
                 .lock()
-                .map(|c| (c.config.ativo, c.config.deteccao_automatica))
-                .unwrap_or((true, true));
+                .map(|c| (c.config.ativo, c.config.deteccao_automatica, c.config.iniciar_com_sistema))
+                .unwrap_or((true, true, false));
 
-            let bandeja = match tray::Bandeja::criar(ativo, deteccao) {
+            let bandeja = match tray::Bandeja::criar(ativo, deteccao, autostart) {
                 Ok(bandeja) => {
                     tray::instalar_handler(canal_gui.clone());
                     Some(bandeja)

@@ -263,6 +263,17 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
                     let _ = c.config.salvar();
                 }
             }
+            AcaoBandeja::AlternarAutostart => {
+                if let Ok(mut c) = estado.lock() {
+                    c.config.iniciar_com_sistema = !c.config.iniciar_com_sistema;
+                    let habilitado = c.config.iniciar_com_sistema;
+                    match crate::autostart::configurar(habilitado) {
+                        Ok(msg) => c.log(format!("[Sistema] {}", msg)),
+                        Err(e) => c.log(format!("[Erro Inicialização] {}", e)),
+                    }
+                    let _ = c.config.salvar();
+                }
+            }
             AcaoBandeja::Sair => std::process::exit(0),
         },
     }

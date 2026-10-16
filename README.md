@@ -27,6 +27,13 @@ estava, e não no popup (as janelas são criadas com `WS_EX_NOACTIVATE`).
 
 ## Novidades e Recursos Recentes
 
+* 🚀 **Inicialização Automática com o Sistema (Windows, macOS e Linux)**:
+  * **Windows**: Integração nativa com o Registro (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`), sem exigir permissões de administrador.
+  * **macOS**: Integração automática com LaunchAgents (`~/Library/LaunchAgents/com.corretoruniversal.app.plist`).
+  * **Linux**: Padrão oficial XDG Autostart (`~/.config/autostart/corretor_universal.desktop`).
+  * Pode ser ativada/desativada tanto pela aba *⚙️ IA & Opções* quanto pelo menu de contexto da bandeja (*Iniciar com o sistema*).
+* 🖼️ **Ícone Nativo Unificado de Alta Definição**:
+  * O ícone translúcido Apple Aqua / gota d'água agora é renderizado em perfeita resolução (32x32 RGBA) em todos os pontos do sistema: executável `.exe`, bandeja da barra de tarefas (systray) e barra de título da janela do app.
 * 🪟 **Design Nativo Compacto & Estável**: Barra em retângulo arredondado moderno (raio de 8px, altura de 34px) com contorno sutil de 1px, sem proporções exageradas de cápsula.
 * ✍️ **Ícones Vetoriais Nativos de Alta Resolução**:
   * **A✓**: Símbolo clássico de verificação ortográfica (A com tique subscrito).
@@ -38,7 +45,6 @@ estava, e não no popup (as janelas são criadas com `WS_EX_NOACTIVATE`).
 * 🤖 **Fallback Automático para IA**: Se o serviço público LanguageTool estiver indisponível ou sofrer com limite de requisições, o motor recorre à sua IA configurada de modo transparente.
 * 🔄 **Reinício Automático Opcional**: Opção na aba *Configurações* para reiniciar o app automaticamente ao salvar novas credenciais/modelos de IA, recarregando conexões imediatamente.
 * 🎯 **Botão de Teste Visual**: Na aba *Teste e Avisos*, utilize o botão **`🎯 Testar Barra Flutuante Agora`** para abrir a barra instantaneamente na posição do mouse e inspecionar os ícones e efeitos de hover.
-* 🖼️ **Ícone do Executável Integrado**: O binário `.exe` inclui ícone nativo do Windows compilado automaticamente via `icone.rc` e `build.rs`.
 
 ## Revisão aviso por aviso (como no LanguageTool)
 
@@ -241,6 +247,7 @@ Para que o atalho global funcione entre aplicativos no macOS:
   "idioma": "pt-BR",
   "ativo": true,
   "deteccao_automatica": true,
+  "iniciar_com_sistema": true,
   "dicionario": ["rust"],
   "ia_url": "https://api.openai.com/v1",
   "ia_chave": "sua-chave",
