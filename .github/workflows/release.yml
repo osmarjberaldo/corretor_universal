@@ -1,0 +1,166 @@
+name: Build & Release Multi-Plataforma
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag / Versão do Release (ex: v0.1.0)'
+        required: true
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Windows (x86_64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Compilar em Release
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Empacotar ZIP (.zip)
+        shell: pwsh
+        run: |
+          $TAG = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "${{ github.event.inputs.tag_name }}" }
+          if (-not $TAG) { $TAG = "v0.1.0" }
+          $OUT_DIR = "corretor_universal-${TAG}-windows-x86_64"
+          New-Item -ItemType Directory -Path $OUT_DIR -Force
+          Copy-Item "target/x86_64-pc-windows-msvc/release/corretor_universal.exe" -Destination $OUT_DIR
+          Copy-Item "README.md", "LICENSE" -Destination $OUT_DIR
+          Compress-Archive -Path "$OUT_DIR/*" -DestinationPath "${OUT_DIR}.zip" -Force
+          (Get-FileHash -Path "${OUT_DIR}.zip" -Algorithm SHA256).Hash + "  ${OUT_DIR}.zip" | Out-File -FilePath "${OUT_DIR}.zip.sha256" -Encoding utf8
+
+      - name: Salvar Artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: corretor_universal-*-windows-x86_64.zip*
+
+  build-linux:
+    name: Linux (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Dependências do Sistema (X11 / OpenGL / GTK / Tray)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config libssl-dev \
+            libx11-dev libxext-dev libxft-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxrandr-dev libxss-dev \
+            libgl1-mesa-dev libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Compilar em Release
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Empacotar (.tar.gz)
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          fi
+          TAG=${TAG:-v0.1.0}
+          OUT_DIR="corretor_universal-${TAG}-linux-x86_64"
+          mkdir -p "$OUT_DIR"
+          cp target/x86_64-unknown-linux-gnu/release/corretor_universal "$OUT_DIR/"
+          cp icone.png "$OUT_DIR/corretor-universal.png"
+          cp packaging/linux/corretor-universal.desktop "$OUT_DIR/"
+          cp packaging/linux/install.sh "$OUT_DIR/"
+          cp packaging/linux/uninstall.sh "$OUT_DIR/"
+          chmod +x "$OUT_DIR/corretor_universal" "$OUT_DIR/install.sh" "$OUT_DIR/uninstall.sh"
+          cp README.md LICENSE "$OUT_DIR/"
+          tar -czvf "${OUT_DIR}.tar.gz" -C "$OUT_DIR" .
+          sha256sum "${OUT_DIR}.tar.gz" > "${OUT_DIR}.tar.gz.sha256"
+
+      - name: Salvar Artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: corretor_universal-*-linux-x86_64.tar.gz*
+
+  build-macos:
+    name: macOS (Universal: Apple Silicon + Intel)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Rust Toolchains (aarch64 & x86_64)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Compilar macOS aarch64 (Apple Silicon)
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Compilar macOS x86_64 (Intel)
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Montar Universal Binary e Bundle .app
+        run: |
+          chmod +x packaging/macos/build_app.sh
+          TAG="${{ github.ref_name }}"
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          fi
+          TAG=${TAG:-v0.1.0}
+          ./packaging/macos/build_app.sh "$TAG"
+
+      - name: Salvar Artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: corretor_universal-*-macos-universal.zip*
+
+  publish-release:
+    name: Publicar no GitHub Releases
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Baixar todos os artefatos compilados
+        uses: actions/download-artifact@v4
+        with:
+          path: dist_release/
+          merge-multiple: true
+
+      - name: Identificar Versão
+        id: vars
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          fi
+          TAG=${TAG:-v0.1.0}
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Criar Release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: Corretor Universal ${{ steps.vars.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: dist_release/*

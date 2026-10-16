@@ -1,3 +1,7 @@
 /target
+/dist
 *.log
 *.tmp
+corretor_universal-*.zip
+corretor_universal-*.tar.gz
+corretor_universal-*.sha256

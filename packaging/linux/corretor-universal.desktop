@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Corretor Universal
+GenericName=Corretor Ortográfico Universal
+GenericName[en]=Universal Spellchecker
+Comment=Corretor ortográfico, gramatical e reescrita com IA em qualquer aplicativo
+Comment[en]=System-wide spellchecker, grammar correction and AI rewriter
+Exec=corretor_universal
+Icon=corretor-universal
+Terminal=false
+Type=Application
+Categories=Utility;TextTools;Office;
+Keywords=spellcheck;corretor;ortografia;gramatica;ai;
+StartupNotify=true

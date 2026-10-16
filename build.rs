@@ -18,14 +18,27 @@ fn main() {
             "windres".to_string()
         };
 
-        let status = std::process::Command::new(&windres_cmd)
+        let mut compilou = false;
+        if let Ok(s) = std::process::Command::new(&windres_cmd)
             .args(&["-i", "icone.rc", "-O", "coff", "-o"])
             .arg(&out_obj)
-            .status();
-
-        if let Ok(s) = status {
+            .status()
+        {
             if s.success() {
                 println!("cargo:rustc-link-arg={}", out_obj.display());
+                compilou = true;
+            }
+        }
+
+        if !compilou {
+            let out_res = std::path::Path::new(&out_dir).join("icone.res");
+            if let Ok(s) = std::process::Command::new("rc.exe")
+                .args(&["/fo", out_res.to_str().unwrap_or("icone.res"), "icone.rc"])
+                .status()
+            {
+                if s.success() {
+                    println!("cargo:rustc-link-arg={}", out_res.display());
+                }
             }
         }
     }

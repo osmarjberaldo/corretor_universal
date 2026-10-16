@@ -142,7 +142,39 @@ de verdade, com opção de salvar essa escolha.
 O atalho global `Ctrl+Alt+C` (`Cmd+Alt+C` no macOS) continua funcionando e abre
 a mesma barra.
 
-## Build e Execução (Todos os Sistemas Operacionais)
+## 📦 Downloads & Releases Prontos (Windows, Linux e macOS)
+
+Os pacotes prontos para uso são gerados automaticamente via **GitHub Actions** em cada lançamento na aba [Releases](../../releases):
+
+| Sistema Operacional | Arquivo | Como Usar |
+| :--- | :--- | :--- |
+| **🪟 Windows (64-bit)** | `corretor_universal-v*-windows-x86_64.zip` | Extraia e execute `corretor_universal.exe`. Não requer instalação. |
+| **🐧 Linux (x86_64)** | `corretor_universal-v*-linux-x86_64.tar.gz` | Extraia e rode `./install.sh` para integrar ao menu de aplicativos e PATH. |
+| **🍎 macOS (Universal)** | `corretor_universal-v*-macos-universal.zip` | Extraia e arraste `Corretor Universal.app` para `Aplicativos`. Roda nativo no Apple Silicon (M1/M2/M3/M4) e Intel. |
+
+### 🚀 Como Criar e Publicar um Novo Release no GitHub
+
+O projeto conta com uma esteira de CI/CD completa configurada em `.github/workflows/release.yml`:
+
+1. **Via Tag no Git**:
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+2. **Via Interface do GitHub**:
+   * Acesse a aba **Actions** no seu repositório.
+   * Selecione o workflow **Build & Release Multi-Plataforma**.
+   * Clique em **Run workflow**, digite a versão desejada (ex: `v0.1.0`) e confirme.
+   * O GitHub Actions compilará os binários em máquinas reais Windows, Ubuntu e macOS, empacotando e criando o Release automaticamente com os arquivos `.zip`, `.tar.gz` e checksums SHA256.
+
+3. **Gerar pacote local no Windows**:
+   * Para gerar o zip de release localmente na sua máquina:
+   ```powershell
+   .\packaging\windows\build_release_zip.ps1 -Tag v0.1.0
+   ```
+   * O arquivo final pronto para upload será criado em `dist/corretor_universal-v0.1.0-windows-x86_64.zip`.
+
+## Build e Execução (Manual / Código Fonte)
 
 ### 1. Windows
 
