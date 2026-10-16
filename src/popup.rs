@@ -200,7 +200,7 @@ mod implementacao {
         BeginPaint, CreateFontW, CreatePen, CreateRoundRectRgn, CreateSolidBrush, DrawTextW,
         Ellipse, EndPaint, FillRect, GetDC, GetDeviceCaps, GetMonitorInfoW,
         GetStockObject, GetTextExtentPoint32W, InvalidateRect, LineTo, MonitorFromPoint, MoveToEx,
-        Polygon, Polyline, ReleaseDC, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor,
+        Polyline, ReleaseDC, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor,
         SetWindowRgn, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_CHARSET, DEFAULT_PITCH,
         DRAW_TEXT_FORMAT, DT_CENTER, DT_LEFT, DT_SINGLELINE, DT_VCENTER, FF_DONTCARE, HBRUSH, HDC,
         HFONT, HGDIOBJ, HPEN, HOLLOW_BRUSH, LOGPIXELSX, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -248,17 +248,16 @@ mod implementacao {
     /// Marca nos dados do item (para não confundir com outras janelas filhas).
     const MAGIA: u32 = 0x4F52_5448;
 
-    /// Paleta translúcida no estilo Apple Liquid Glass (RGB em ordem COLORREF: 0x00BBGGRR).
-    const FUNDO: COLORREF = COLORREF(0x0020_1E1E); // RGB(30,30,32) - vidro fumê escuro
-    const FUNDO_HOVER: COLORREF = COLORREF(0x003B_3938); // RGB(56,57,59) - realce vítreo suave
-    const BORDA: COLORREF = COLORREF(0x0068_5C54); // RGB(84,92,104) - anel de brilho sutil da gota
-    const BORDA_ESPECULAR: COLORREF = COLORREF(0x0090_8075); // RGB(117,128,144) - brilho especular de luz na borda da gota
-    const MARCA_FUNDO: COLORREF = COLORREF(0x0045_3015); // RGB(21,48,69) - fundo azul marinho de gota d'água
-    const MARCA_BORDA: COLORREF = COLORREF(0x00C0_7D2A); // RGB(42,125,192) - anel de água azul brilhante
-    const DIVISOR: COLORREF = COLORREF(0x004A_4440); // RGB(64,68,74) - divisor translúcido discreto
-    const TEXTO: COLORREF = COLORREF(0x00F4_F2F0); // RGB(240,242,244) - tipografia límpida
-    const ICONE: COLORREF = COLORREF(0x00E6_E4E2); // RGB(226,228,230)
-    const ACENTO: COLORREF = COLORREF(0x00FF_A658); // RGB(88,166,255) - Apple System Azure
+    /// Paleta escura nativa estilo Apple / Windows 11 Fluent (RGB em ordem COLORREF: 0x00BBGGRR).
+    const FUNDO: COLORREF = COLORREF(0x0022_1F1E); // RGB(30,31,34) - Fundo escuro nativo idêntico à referência
+    const FUNDO_HOVER: COLORREF = COLORREF(0x003A_3635); // RGB(53,54,58) - Realce de hover sutil
+    const BORDA: COLORREF = COLORREF(0x0044_403D); // RGB(61,64,68) - Contorno fino 1px
+    const BORDA_ESPECULAR: COLORREF = COLORREF(0x0058_524E); // RGB(78,82,88) - Brilho sutil na borda superior
+    const DIVISOR: COLORREF = COLORREF(0x003D_3936); // RGB(54,57,61) - Divisor vertical 1px
+    const TEXTO: COLORREF = COLORREF(0x00E6_E4E2); // RGB(226,228,230) - Tipografia nativa
+    const ICONE: COLORREF = COLORREF(0x00D6_D4D2); // RGB(210,212,214) - Traçado nítido dos ícones
+    const ACENTO: COLORREF = COLORREF(0x00FF_A038); // RGB(56,160,255) - Azul elétrico de destaque
+    const AZUL_MARCA: COLORREF = COLORREF(0x00FF_9833); // RGB(51,152,255) - Azul vivo da marca 'A'
     const TEXTO_BALAO: COLORREF = COLORREF(0x00F0_EEEC);
 
     /// Escala a partir das medidas do "design" (96 dpi).
@@ -276,15 +275,12 @@ mod implementacao {
         fonte_edit: HFONT,
         pincel_fundo: HBRUSH,
         pincel_hover: HBRUSH,
-        pincel_acento: HBRUSH,
-        pincel_marca_fundo: HBRUSH,
         pincel_divisor: HBRUSH,
         pincel_icone: HBRUSH,
         caneta_icone: HPEN,
         caneta_acento: HPEN,
         caneta_borda: HPEN,
         caneta_especular: HPEN,
-        caneta_marca_borda: HPEN,
     }
 
     /// Dados de cada janela de item (guardados em GWLP_USERDATA).
@@ -650,7 +646,8 @@ mod implementacao {
     unsafe fn preencher_arredondado(hdc: HDC, w: i32, h: i32, raio: i32, pincel: HBRUSH) {
         let pincel_antigo = selecionar(hdc, HGDIOBJ(pincel.0));
         let caneta_antiga = selecionar(hdc, GetStockObject(NULL_PEN));
-        let _ = RoundRect(hdc, 0, 0, w, h, raio * 2, raio * 2);
+        let m = 2; // margem interna para dar espaçamento de botão nativo
+        let _ = RoundRect(hdc, m, m, w - m, h - m, raio * 2, raio * 2);
         selecionar(hdc, caneta_antiga);
         selecionar(hdc, pincel_antigo);
     }
@@ -676,10 +673,10 @@ mod implementacao {
         tamanho.cx
     }
 
-    unsafe fn desenhar_chevron(hdc: HDC, x: i32, y: i32, largura: i32, r: &Recursos) {
+    unsafe fn desenhar_chevron(hdc: HDC, x: i32, y: i32, _largura: i32, r: &Recursos) {
         let caneta = selecionar(hdc, HGDIOBJ(r.caneta_icone.0));
-        let alt = px(3.0, r.escala);
-        let larg = px(7.0, r.escala).min(largura);
+        let alt = px(2.5, r.escala);
+        let larg = px(5.0, r.escala);
         let cx = x + larg / 2;
         let cy = y;
         let pontos = [
@@ -692,86 +689,95 @@ mod implementacao {
     }
 
     unsafe fn desenhar_icone(hdc: HDC, icone: Icone, x: i32, y: i32, lado: i32, r: &Recursos, quente: bool) {
-        let l = lado as f32;
         match icone {
             Icone::Corrigir => {
-                // Checkmark cristalino Apple Aqua (preenchido com azul elétrico)
-                let p = |rx: f32, ry: f32| POINT {
-                    x: x + (rx * l).round() as i32,
-                    y: y + (ry * l).round() as i32,
-                };
-                let pincel = selecionar(hdc, HGDIOBJ(r.pincel_acento.0));
-                let caneta = selecionar(hdc, HGDIOBJ(r.caneta_acento.0));
-                let check = [
-                    p(0.14, 0.52),
-                    p(0.38, 0.76),
-                    p(0.86, 0.24),
-                    p(0.76, 0.14),
-                    p(0.38, 0.58),
-                    p(0.24, 0.42),
-                ];
-                let _ = Polygon(hdc, &check);
+                // Símbolo de Verificação Ortográfica: Letra "A" com tique "✓" subscrito
+                let caneta = selecionar(hdc, HGDIOBJ(r.caneta_icone.0));
+                let cx_a = x + px(4.5, r.escala);
+                let cy_a = y + lado / 2 - px(1.0, r.escala);
+                let w_a = px(3.2, r.escala);
+                let h_a = px(4.5, r.escala);
+
+                // Pernas e traço do "A"
+                let _ = MoveToEx(hdc, cx_a - w_a, cy_a + h_a, None);
+                let _ = LineTo(hdc, cx_a, cy_a - h_a);
+                let _ = LineTo(hdc, cx_a + w_a, cy_a + h_a);
+                let _ = MoveToEx(hdc, cx_a - w_a + px(1.0, r.escala), cy_a + px(1.5, r.escala), None);
+                let _ = LineTo(hdc, cx_a + w_a - px(1.0, r.escala), cy_a + px(1.5, r.escala));
+
+                // Tique "✓" subscrito à direita em azul de destaque
+                let caneta_chk = selecionar(hdc, HGDIOBJ(r.caneta_acento.0));
+                let px_c = x + lado - px(5.0, r.escala);
+                let py_c = y + lado / 2 + px(3.0, r.escala);
+                let _ = MoveToEx(hdc, px_c - px(2.5, r.escala), py_c - px(2.0, r.escala), None);
+                let _ = LineTo(hdc, px_c, py_c + px(1.0, r.escala));
+                let _ = LineTo(hdc, px_c + px(4.0, r.escala), py_c - px(3.0, r.escala));
+
+                selecionar(hdc, caneta_chk);
                 selecionar(hdc, caneta);
-                selecionar(hdc, pincel);
             }
             Icone::Estrela => {
-                // Brilho Apple Intelligence suave de 4 pontas + centelha
-                let pincel = selecionar(hdc, HGDIOBJ(r.pincel_acento.0));
-                let caneta = selecionar(hdc, HGDIOBJ(r.caneta_acento.0));
+                // Varinha Mágica (Magic Wand) com centelhas estilo IA
+                let caneta = selecionar(hdc, HGDIOBJ(r.caneta_icone.0));
+                let cx = x + lado / 2;
+                let cy = y + lado / 2;
+                let d = px(4.5, r.escala);
 
-                let cx1 = x + (l * 0.44).round() as i32;
-                let cy1 = y + (l * 0.52).round() as i32;
-                let r1 = (l * 0.38).round().max(2.0) as i32;
-                let c1 = ((r1 as f32) * 0.28).round().max(1.0) as i32;
-                let estrela1 = [
-                    POINT { x: cx1, y: cy1 - r1 },
-                    POINT { x: cx1 + c1, y: cy1 - c1 },
-                    POINT { x: cx1 + r1, y: cy1 },
-                    POINT { x: cx1 + c1, y: cy1 + c1 },
-                    POINT { x: cx1, y: cy1 + r1 },
-                    POINT { x: cx1 - c1, y: cy1 + c1 },
-                    POINT { x: cx1 - r1, y: cy1 },
-                    POINT { x: cx1 - c1, y: cy1 - c1 },
-                ];
-                let _ = Polygon(hdc, &estrela1);
+                // Haste da varinha (inclinada a 45 graus)
+                let _ = MoveToEx(hdc, cx - d, cy + d, None);
+                let _ = LineTo(hdc, cx + px(1.0, r.escala), cy - px(1.0, r.escala));
 
-                let cx2 = x + (l * 0.78).round() as i32;
-                let cy2 = y + (l * 0.24).round() as i32;
-                let r2 = (l * 0.18).round().max(1.0) as i32;
-                let c2 = ((r2 as f32) * 0.30).round().max(1.0) as i32;
-                let estrela2 = [
-                    POINT { x: cx2, y: cy2 - r2 },
-                    POINT { x: cx2 + c2, y: cy2 - c2 },
-                    POINT { x: cx2 + r2, y: cy2 },
-                    POINT { x: cx2 + c2, y: cy2 + c2 },
-                    POINT { x: cx2, y: cy2 + r2 },
-                    POINT { x: cx2 - c2, y: cy2 + c2 },
-                    POINT { x: cx2 - r2, y: cy2 },
-                    POINT { x: cx2 - c2, y: cy2 - c2 },
-                ];
-                let _ = Polygon(hdc, &estrela2);
+                // Estrela / centelha principal na ponta da varinha
+                let cx_s = cx + px(3.5, r.escala);
+                let cy_s = cy - px(3.5, r.escala);
+                let r_s = px(3.0, r.escala);
+                let _ = MoveToEx(hdc, cx_s, cy_s - r_s, None);
+                let _ = LineTo(hdc, cx_s, cy_s + r_s + 1);
+                let _ = MoveToEx(hdc, cx_s - r_s, cy_s, None);
+                let _ = LineTo(hdc, cx_s + r_s + 1, cy_s);
+
+                // Pontas diagonais da centelha principal
+                let d_s = px(1.5, r.escala);
+                let _ = MoveToEx(hdc, cx_s - d_s, cy_s - d_s, None);
+                let _ = LineTo(hdc, cx_s + d_s + 1, cy_s + d_s + 1);
+                let _ = MoveToEx(hdc, cx_s + d_s, cy_s - d_s, None);
+                let _ = LineTo(hdc, cx_s - d_s - 1, cy_s + d_s + 1);
+
+                // Centelha menor ao lado
+                let cx_s2 = cx - px(2.5, r.escala);
+                let cy_s2 = cy - px(3.5, r.escala);
+                let _ = MoveToEx(hdc, cx_s2, cy_s2 - px(1.5, r.escala), None);
+                let _ = LineTo(hdc, cx_s2, cy_s2 + px(2.0, r.escala));
+                let _ = MoveToEx(hdc, cx_s2 - px(1.5, r.escala), cy_s2, None);
+                let _ = LineTo(hdc, cx_s2 + px(2.0, r.escala), cy_s2);
 
                 selecionar(hdc, caneta);
-                selecionar(hdc, pincel);
             }
             Icone::Copiar => {
-                // Duas folhas de documento sobrepostas estilo Apple SF Symbols
-                let canto = px(2.5, r.escala) * 2;
+                // Duas folhas de documento sobrepostas estilo nativo Apple / Windows
+                let canto = px(2.0, r.escala) * 2;
                 let caneta = selecionar(hdc, HGDIOBJ(r.caneta_icone.0));
 
-                // Folha de trás
-                let r_tras_left = x + (l * 0.32).round() as i32;
-                let r_tras_top = y + (l * 0.12).round() as i32;
-                let r_tras_right = x + (l * 0.88).round() as i32;
-                let r_tras_bottom = y + (l * 0.68).round() as i32;
+                let w_doc = px(8.0, r.escala);
+                let h_doc = px(9.0, r.escala);
+                let off = px(2.5, r.escala);
+
+                let cx = x + lado / 2;
+                let cy = y + lado / 2;
+
+                // Folha de trás (superior direita)
+                let r_tras_left = cx - w_doc / 2 + off;
+                let r_tras_top = cy - h_doc / 2 - off;
+                let r_tras_right = r_tras_left + w_doc;
+                let r_tras_bottom = r_tras_top + h_doc;
                 let vazio = selecionar(hdc, GetStockObject(HOLLOW_BRUSH));
                 let _ = RoundRect(hdc, r_tras_left, r_tras_top, r_tras_right, r_tras_bottom, canto, canto);
 
-                // Folha da frente (com fundo dinâmico para cobrir a de trás com precisão vítrea)
-                let r_frente_left = x + (l * 0.12).round() as i32;
-                let r_frente_top = y + (l * 0.32).round() as i32;
-                let r_frente_right = x + (l * 0.68).round() as i32;
-                let r_frente_bottom = y + (l * 0.88).round() as i32;
+                // Folha da frente (inferior esquerda) com preenchimento opaco
+                let r_frente_left = cx - w_doc / 2 - off;
+                let r_frente_top = cy - h_doc / 2 + off;
+                let r_frente_right = r_frente_left + w_doc;
+                let r_frente_bottom = r_frente_top + h_doc;
                 let pincel_frente = if quente { r.pincel_hover } else { r.pincel_fundo };
                 selecionar(hdc, HGDIOBJ(pincel_frente.0));
                 let _ = RoundRect(hdc, r_frente_left, r_frente_top, r_frente_right, r_frente_bottom, canto, canto);
@@ -780,15 +786,17 @@ mod implementacao {
                 selecionar(hdc, caneta);
             }
             Icone::Mais => {
-                // Três pontos verticais (⋮) translúcidos Apple Aqua perfeitamente visíveis e separados
+                // Três pontos verticais (⋮) nativos e limpos
                 let cx = x + lado / 2;
-                let r_pt = px(1.3, r.escala).max(1);
+                let cy = y + lado / 2;
+                let r_pt = px(1.0, r.escala).max(1);
                 let pincel = selecionar(hdc, HGDIOBJ(r.pincel_icone.0));
                 let caneta = selecionar(hdc, HGDIOBJ(r.caneta_icone.0));
+                let espaco_dot = px(3.5, r.escala);
 
-                for fator in [0.20f32, 0.50f32, 0.80f32] {
-                    let cy = y + (l * fator).round() as i32;
-                    let _ = Ellipse(hdc, cx - r_pt, cy - r_pt, cx + r_pt + 1, cy + r_pt + 1);
+                for dy in [-espaco_dot, 0, espaco_dot] {
+                    let y_dot = cy + dy;
+                    let _ = Ellipse(hdc, cx - r_pt, y_dot - r_pt, cx + r_pt + 1, y_dot + r_pt + 1);
                 }
 
                 selecionar(hdc, caneta);
@@ -798,7 +806,7 @@ mod implementacao {
                 // Cruz (✕) nítida e simétrica
                 let cx = x + lado / 2;
                 let cy = y + lado / 2;
-                let rx = (l * 0.22).round().max(2.0) as i32;
+                let rx = px(3.5, r.escala);
 
                 let caneta = selecionar(hdc, HGDIOBJ(r.caneta_icone.0));
                 let _ = MoveToEx(hdc, cx - rx, cy - rx, None);
@@ -812,26 +820,8 @@ mod implementacao {
     }
 
     unsafe fn desenhar_marca(hdc: HDC, rc: RECT, r: &Recursos) {
-        let cx = (rc.left + rc.right) / 2;
-        let cy = (rc.top + rc.bottom) / 2;
-        let raio = px(11.0, r.escala);
-
-        // Insígnia gota d'água / Apple Aqua cristalina
-        let pincel_antigo = selecionar(hdc, HGDIOBJ(r.pincel_marca_fundo.0));
-        let caneta_antiga = selecionar(hdc, HGDIOBJ(r.caneta_marca_borda.0));
-        let _ = Ellipse(hdc, cx - raio, cy - raio, cx + raio + 1, cy + raio + 1);
-
-        // Letra A nítida
-        let area = RECT {
-            left: cx - raio,
-            top: cy - raio - px(1.0, r.escala),
-            right: cx + raio + 1,
-            bottom: cy + raio + 1,
-        };
-        escrever(hdc, "A", area, r.fonte_marca, TEXTO, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
-        selecionar(hdc, caneta_antiga);
-        selecionar(hdc, pincel_antigo);
+        // Marca limpa nativa: letra A estilizada em azul cyan idêntica à referência
+        escrever(hdc, "A", rc, r.fonte_marca, AZUL_MARCA, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     unsafe fn esta_quente(janela: HWND) -> bool {
@@ -847,11 +837,7 @@ mod implementacao {
             let _ = GetClientRect(janela, &mut rc);
             let w = rc.right - rc.left;
             let h = rc.bottom - rc.top;
-            let raio_hover = if dados.vertical {
-                px(8.0, r.escala)
-            } else {
-                h / 2
-            };
+            let raio_hover = px(5.0, r.escala);
             let quente = esta_quente(janela);
             if quente {
                 preencher_arredondado(hdc, w, h, raio_hover, r.pincel_hover);
@@ -859,10 +845,10 @@ mod implementacao {
                 FillRect(hdc, &rc, r.pincel_fundo);
             }
 
-            let pad = px(10.0, r.escala);
-            let lado = px(16.0, r.escala);
-            let espaco = px(7.0, r.escala);
-            let seta_largura = px(9.0, r.escala);
+            let pad = px(7.0, r.escala);
+            let lado = px(15.0, r.escala);
+            let espaco = px(5.0, r.escala);
+            let seta_largura = px(5.0, r.escala);
             let mut x = pad;
             let mut direita = w - pad;
 
@@ -875,26 +861,31 @@ mod implementacao {
                 let area = RECT { left: x, top: 0, right: direita, bottom: h };
                 escrever(hdc, &texto_janela(janela), area, r.fonte_item, TEXTO, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             } else {
-                if !dados.submenu.is_empty() && dados.seta {
-                    direita -= seta_largura + espaco;
-                }
-                if dados.icone != Icone::Nenhum {
-                    let pos_x = if dados.somente_icone {
-                        (w - lado) / 2
+                if dados.somente_icone {
+                    if !dados.submenu.is_empty() && dados.seta {
+                        // Ícone + chevron agrupados e centralizados no botão: [ 🪄 ⌄ ]
+                        let total_w = lado + px(2.5, r.escala) + seta_largura;
+                        let start_x = (w - total_w) / 2;
+                        desenhar_icone(hdc, dados.icone, start_x, (h - lado) / 2, lado, &r, quente);
+                        desenhar_chevron(hdc, start_x + lado + px(2.5, r.escala), h / 2, seta_largura, &r);
                     } else {
-                        x
-                    };
-                    desenhar_icone(hdc, dados.icone, pos_x, (h - lado) / 2, lado, &r, quente);
-                    if !dados.somente_icone {
+                        // Apenas ícone centralizado
+                        let pos_x = (w - lado) / 2;
+                        desenhar_icone(hdc, dados.icone, pos_x, (h - lado) / 2, lado, &r, quente);
+                    }
+                } else {
+                    if !dados.submenu.is_empty() && dados.seta {
+                        direita -= seta_largura + espaco;
+                    }
+                    if dados.icone != Icone::Nenhum {
+                        desenhar_icone(hdc, dados.icone, x, (h - lado) / 2, lado, &r, quente);
                         x += lado + espaco;
                     }
-                }
-                if !dados.somente_icone {
                     let area = RECT { left: x, top: 0, right: direita, bottom: h };
                     escrever(hdc, &texto_janela(janela), area, r.fonte_item, TEXTO, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-                }
-                if !dados.submenu.is_empty() && dados.seta {
-                    desenhar_chevron(hdc, w - pad - seta_largura, h / 2, seta_largura, &r);
+                    if !dados.submenu.is_empty() && dados.seta {
+                        desenhar_chevron(hdc, w - pad - seta_largura, h / 2, seta_largura, &r);
+                    }
                 }
             }
         }
@@ -911,17 +902,17 @@ mod implementacao {
             let w = rc.right;
             let h = rc.bottom;
             FillRect(hdc, &rc, r.pincel_fundo);
-            // Borda cristalina de gota d'água / vidro suave
-            let raio = if w > h * 2 { h / 2 } else { r.raio };
+            
+            // Borda do retângulo arredondado nativo estilo Apple / Fluent Dark
+            let raio = r.raio;
             let pincel_antigo = selecionar(hdc, GetStockObject(HOLLOW_BRUSH));
             let caneta_antiga = selecionar(hdc, HGDIOBJ(r.caneta_borda.0));
             let _ = RoundRect(hdc, 0, 0, w, h, raio * 2, raio * 2);
 
-            // Brilho especular sutil na curvatura superior estilo Apple Liquid Glass
+            // Borda superior sutil com leve brilho especular
             selecionar(hdc, HGDIOBJ(r.caneta_especular.0));
-            let margem_especular = raio.max(4);
-            let _ = MoveToEx(hdc, margem_especular, 1, None);
-            let _ = LineTo(hdc, w - margem_especular, 1);
+            let _ = MoveToEx(hdc, raio, 1, None);
+            let _ = LineTo(hdc, w - raio, 1);
 
             selecionar(hdc, caneta_antiga);
             selecionar(hdc, pincel_antigo);
@@ -1088,15 +1079,15 @@ mod implementacao {
         com_estado(|e| antigos = std::mem::take(&mut e.itens_barra));
         destruir(&mut antigos);
 
-        let margem = px(4.0, r.escala);
-        let pad = px(11.0, r.escala);
-        let lado = px(16.0, r.escala);
-        let espaco = px(7.0, r.escala);
-        let seta_largura = px(9.0, r.escala);
-        let separador = px(9.0, r.escala);
-        let largura_marca = px(32.0, r.escala);
-        let largura_icone_sozinho = px(30.0, r.escala);
-        let altura_item = px(32.0, r.escala);
+        let margem = px(3.0, r.escala);
+        let pad = px(8.0, r.escala);
+        let lado = px(15.0, r.escala);
+        let espaco = px(6.0, r.escala);
+        let seta_largura = px(5.0, r.escala);
+        let separador = px(8.0, r.escala);
+        let largura_marca = px(24.0, r.escala);
+        let largura_icone_sozinho = px(28.0, r.escala);
+        let altura_item = px(28.0, r.escala);
         let hdc = GetDC(janela);
 
         let mut larguras = Vec::with_capacity(itens.len());
@@ -1106,7 +1097,11 @@ mod implementacao {
                 continue;
             }
             if item.somente_icone {
-                larguras.push(largura_icone_sozinho);
+                if !item.submenu.is_empty() && item.seta {
+                    larguras.push(largura_icone_sozinho + espaco + seta_largura);
+                } else {
+                    larguras.push(largura_icone_sozinho);
+                }
                 continue;
             }
             let texto_l = if item.rotulo.is_empty() {
@@ -1125,7 +1120,7 @@ mod implementacao {
             if !item.submenu.is_empty() && item.seta {
                 largura += espaco + seta_largura;
             }
-            larguras.push(largura.max(px(28.0, r.escala)));
+            larguras.push(largura.max(px(26.0, r.escala)));
         }
         let _ = ReleaseDC(janela, hdc);
 
@@ -1142,9 +1137,9 @@ mod implementacao {
                 let centro = cursor_x + separador / 2;
                 tracos.push(RECT {
                     left: centro,
-                    top: altura_total / 4,
+                    top: px(5.0, r.escala),
                     right: centro + 1,
-                    bottom: altura_total - altura_total / 4,
+                    bottom: altura_total - px(5.0, r.escala),
                 });
                 cursor_x += separador;
             }
@@ -1185,8 +1180,7 @@ mod implementacao {
                 aberta.store(true, std::sync::atomic::Ordering::Relaxed);
             }
         });
-        let raio_capsula = altura_total / 2;
-        aplicar_regiao(janela, largura_total, altura_total, raio_capsula);
+        aplicar_regiao(janela, largura_total, altura_total, r.raio);
         mostrar(
             janela,
             x + px(8.0, r.escala),
@@ -1312,21 +1306,18 @@ mod implementacao {
         };
         Recursos {
             escala,
-            raio: px(14.0, escala),
-            fonte_item: fonte(9.5, 500),
-            fonte_marca: fonte(11.5, 600),
-            fonte_edit: fonte(10.0, 400),
+            raio: px(8.0, escala),
+            fonte_item: fonte(9.2, 500),
+            fonte_marca: fonte(11.0, 700),
+            fonte_edit: fonte(9.5, 400),
             pincel_fundo: CreateSolidBrush(FUNDO),
             pincel_hover: CreateSolidBrush(FUNDO_HOVER),
-            pincel_acento: CreateSolidBrush(ACENTO),
-            pincel_marca_fundo: CreateSolidBrush(MARCA_FUNDO),
             pincel_divisor: CreateSolidBrush(DIVISOR),
             pincel_icone: CreateSolidBrush(ICONE),
-            caneta_icone: CreatePen(PS_SOLID, px(1.0, escala).max(1), ICONE),
-            caneta_acento: CreatePen(PS_SOLID, px(1.5, escala).max(1), ACENTO),
+            caneta_icone: CreatePen(PS_SOLID, 1, ICONE),
+            caneta_acento: CreatePen(PS_SOLID, 1, ACENTO),
             caneta_borda: CreatePen(PS_SOLID, 1, BORDA),
             caneta_especular: CreatePen(PS_SOLID, 1, BORDA_ESPECULAR),
-            caneta_marca_borda: CreatePen(PS_SOLID, 1, MARCA_BORDA),
         }
     }
 

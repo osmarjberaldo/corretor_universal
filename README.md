@@ -6,21 +6,20 @@
 > 💧 **Novo visual**: barra flutuante translúcida estilo gota d'água / pílula (*Apple Liquid Glass*), com reflexo especular, ícones nítidos e detecção inteligente que dispara **apenas** quando houver texto realmente selecionado.
 
 Selecione um texto (arrastando o mouse ou dando duplo clique numa palavra) e uma **barra de ações aparece sozinha**
-no cursor, no estilo das barras de correção nativas da Apple (ícone + rótulo, separadores translúcidos,
-setas de submenu, botão de copiar, "⋮" e "✕"):
+no cursor, com acabamento nativo elegante (ícones em vetor, tipografia límpida, separadores sutis,
+botão de cópia, menu de varinha mágica para IA, "⋮" e "✕"):
 
 ```
-[ 💧 A ] │ [ ✓ Corrigir ▾ ]  [ ✨ Melhorar ▾ ]  [ 📋 ] │ [ ⋮ ]  [ ✕ ]
+[ A ] │ [ A✓ Corrigir ]  [ 🪄 ⌄ ]  [ ❐ ] │ [ ⋮ ]  [ ✕ ]
 ```
 
 | Botão | O que faz |
 | --- | --- |
-| **✓ Corrigir** | Ortografia/gramática pelo LanguageTool (com fallback inteligente para IA se a API oscilar). Campo editável → substitui a seleção no lugar; campo travado → balão escuro com o resultado. |
-| **✓ Corrigir ▾** | Flyout: *Substituir a seleção*, *Apenas copiar a correção* e — quando a verificação já terminou — **as alternativas reais do primeiro aviso** (*Só isto: programaçao → programação*, *programadão*, ...) mais *Revisar N aviso(s) na janela…*. |
-| **✨ Melhorar** | Reescreve o texto na IA personalizada (endpoint compatível com OpenAI, Groq, Ollama, etc.) e aplica o resultado. |
-| **✨ Melhorar ▾** | Flyout com o estilo do pedido: *Clareza e gramática* (usa o seu prompt), *Mais formal*, *Mais simples*, *Mais curto*. |
-| **📋 Copiar** (só o ícone) | Copia a seleção como está, sem chamar API/IA. |
-| **⋮** | Flyout: *Histórico de correções (10 recentes)*, *Configurações do app*, *Adicionar seleção ao dicionário* (uma palavra só), *Pausar a captura*, *Sair*. |
+| **A** | Marca do aplicativo em azul ciano limpo nativo. |
+| **A✓ Corrigir** | Ortografia/gramática pelo LanguageTool (com fallback inteligente para IA se a API oscilar). Campo editável → substitui a seleção no lugar; campo travado → balão escuro com o resultado. |
+| **🪄 ⌄** | Menu compacto de IA (varinha mágica): *Clareza e gramática*, *Mais formal*, *Mais simples*, *Mais curto*. |
+| **❐ Copiar** (só o ícone) | Copia a seleção como está, sem chamar API/IA. |
+| **⋮** | Flyout: *Revisar avisos na janela…*, *Histórico de correções (10 recentes)*, *Configurações do app*, *Adicionar seleção ao dicionário*, *Pausar a captura*, *Sair*. |
 | **✕** | Fecha a barra (o mesmo que `Esc` ou clicar fora). |
 
 A barra **não rouba o foco**: o clique em "Corrigir" cola no campo onde você
@@ -28,7 +27,13 @@ estava, e não no popup (as janelas são criadas com `WS_EX_NOACTIVATE`).
 
 ## Novidades e Recursos Recentes
 
-* 💧 **Design Apple Aqua / Liquid Glass**: Cápsula translúcida vítrea com linha de luz de reflexo especular superior (`BORDA_ESPECULAR`), badge de marca circular em gota d'água marinha (`MARCA_FUNDO` `#153045` + `MARCA_BORDA` `#2A7DC0`), e ícone dos três pontos verticais (`⋮`) com traçado duplo sólido (sem falhas de rasterização GDI).
+* 🪟 **Design Nativo Compacto & Estável**: Barra em retângulo arredondado moderno (raio de 8px, altura de 34px) com contorno sutil de 1px, sem proporções exageradas de cápsula.
+* ✍️ **Ícones Vetoriais Nativos de Alta Resolução**:
+  * **A✓**: Símbolo clássico de verificação ortográfica (A com tique subscrito).
+  * **🪄 ⌄**: Varinha mágica elegante com centelhas estilo IA e chevron compacto.
+  * **❐**: Folhas de documento sobrepostas nativas com alinhamento ortogonal.
+  * **⋮**: Três pontos verticais perfeitamente centralizados e dimensionados.
+  * **✕**: Cruz fina, nítida e simétrica.
 * 📜 **Histórico Persistente (10 recentes)**: Salva automaticamente as últimas 10 correções em `%APPDATA%\corretor_universal\historico.json`. Acompanhe original vs. corrigido, data/hora, tipo de motor (LanguageTool / IA) e copie facilmente.
 * 🤖 **Fallback Automático para IA**: Se o serviço público LanguageTool estiver indisponível ou sofrer com limite de requisições, o motor recorre à sua IA configurada de modo transparente.
 * 🔄 **Reinício Automático Opcional**: Opção na aba *Configurações* para reiniciar o app automaticamente ao salvar novas credenciais/modelos de IA, recarregando conexões imediatamente.

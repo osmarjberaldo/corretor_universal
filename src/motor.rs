@@ -303,21 +303,22 @@ pub fn itens_menu(analise: &[Aviso], analisando: bool) -> Vec<ItemBarra> {
 
     vec![
         ItemBarra::marca(),
-        ItemBarra::acao(ACAO_CORRIGIR, "Corrigir", Icone::Corrigir)
-            .com_divisor()
+        ItemBarra::acao(ACAO_CORRIGIR, "Corrigir", Icone::Corrigir).com_divisor(),
+        ItemBarra::acao(ACAO_MELHORAR, "", Icone::Estrela)
+            .somente_icone()
             .com_seta()
-            .com_submenu(submenu_corrigir),
-        ItemBarra::acao(ACAO_MELHORAR, "Melhorar", Icone::Estrela).com_seta().com_submenu(vec![
-            (ACAO_MELHORAR, "Clareza e gramática".to_string()),
-            (ACAO_MELHORAR_FORMAL, "Mais formal".to_string()),
-            (ACAO_MELHORAR_SIMPLES, "Mais simples".to_string()),
-            (ACAO_MELHORAR_CURTO, "Mais curto".to_string()),
-        ]),
+            .com_submenu(vec![
+                (ACAO_MELHORAR, "Clareza e gramática".to_string()),
+                (ACAO_MELHORAR_FORMAL, "Mais formal".to_string()),
+                (ACAO_MELHORAR_SIMPLES, "Mais simples".to_string()),
+                (ACAO_MELHORAR_CURTO, "Mais curto".to_string()),
+            ]),
         ItemBarra::acao(ACAO_COPIAR, "Copiar", Icone::Copiar).somente_icone(),
         ItemBarra::acao(ACAO_MAIS, "Mais ações", Icone::Mais)
             .somente_icone()
             .com_divisor()
             .com_submenu(vec![
+                (ACAO_REVISAR, "Revisar avisos na janela…".to_string()),
                 (ACAO_HISTORICO, "Histórico de correções (10 recentes)".to_string()),
                 (ACAO_ABRIR_APP, "Configurações do app".to_string()),
                 (ACAO_DICIONARIO, "Adicionar seleção ao dicionário".to_string()),
