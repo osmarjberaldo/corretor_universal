@@ -40,7 +40,9 @@ impl Historico {
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default();
         if h.itens.len() > MAX_HISTORICO {
+            // mantém sempre os mais novos (o mais novo fica no topo)
             h.itens.truncate(MAX_HISTORICO);
+            let _ = h.salvar();
         }
         h
     }
@@ -55,10 +57,19 @@ impl Historico {
     }
 
     pub fn adicionar(&mut self, original: &str, corrigido: &str, tipo: &str) {
+        if self.registrar(original, corrigido, tipo) {
+            let _ = self.salvar();
+        }
+    }
+
+    /// Coloca a correção no topo e, ao passar do limite, **descarta o mais
+    /// antigo** (o último da lista), mantendo sempre os mais novos.
+    /// Devolve `true` se a lista mudou.
+    fn registrar(&mut self, original: &str, corrigido: &str, tipo: &str) -> bool {
         let orig = original.trim();
         let corr = corrigido.trim();
         if orig.is_empty() || orig == corr {
-            return;
+            return false;
         }
 
         // Remove duplicata prévia idêntica para manter o mais recente no topo
@@ -73,9 +84,10 @@ impl Historico {
 
         self.itens.insert(0, novo);
         if self.itens.len() > MAX_HISTORICO {
+            // remove do fim (mais antigos), preservando os mais novos
             self.itens.truncate(MAX_HISTORICO);
         }
-        let _ = self.salvar();
+        true
     }
 
     pub fn limpar(&mut self) {
@@ -120,4 +132,44 @@ fn data_hora_atual() -> String {
     let m = (secs / 60) % 60;
     let s = secs % 60;
     format!("{:02}:{:02}:{:02}", h, m, s)
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn mantem_os_mais_novos_e_descarta_o_mais_antigo() {
+        let mut h = Historico::default();
+        for n in 0..12 {
+            h.registrar(&format!("erro {}", n), &format!("certo {}", n), "Correção");
+        }
+
+        assert_eq!(h.itens.len(), MAX_HISTORICO);
+        // o mais novo fica no topo
+        assert_eq!(h.itens[0].original, "erro 11");
+        // o último da lista é o mais antigo entre os mantidos
+        assert_eq!(h.itens.last().unwrap().original, "erro 2");
+        // os antigos (erro 0 e erro 1) foram descartados
+        assert!(h.itens.iter().all(|i| i.original != "erro 0"));
+        assert!(h.itens.iter().all(|i| i.original != "erro 1"));
+    }
+
+    #[test]
+    fn nao_guarda_quando_o_texto_nao_muda() {
+        let mut h = Historico::default();
+        assert!(!h.registrar("igual", "igual", "Correção"));
+        assert!(!h.registrar("   ", "algo", "Correção"));
+        assert!(h.itens.is_empty());
+    }
+
+    #[test]
+    fn duplicata_sobe_para_o_topo_sem_crescer() {
+        let mut h = Historico::default();
+        h.registrar("a", "A", "Correção");
+        h.registrar("b", "B", "Correção");
+        h.registrar("a", "A", "Correção");
+        assert_eq!(h.itens.len(), 2);
+        assert_eq!(h.itens[0].original, "a");
+    }
 }

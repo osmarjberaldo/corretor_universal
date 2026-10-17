@@ -68,6 +68,8 @@ pub struct Config {
     pub iniciar_com_sistema: bool,
     /// Exibir balão flutuante quando o campo não aceitar substituição direta.
     pub balao_ativo: bool,
+    /// Mostrar a prévia do texto novo e pedir confirmação antes de substituir.
+    pub confirmar_substituicao: bool,
     /// Ação ao clicar no botão fechar (X) da janela:
     /// perguntar (exibe aviso), minimizar para a bandeja ou encerrar.
     pub acao_ao_fechar: AcaoFechar,
@@ -107,6 +109,7 @@ impl Default for Config {
             deteccao_automatica: true,
             iniciar_com_sistema: false,
             balao_ativo: true,
+            confirmar_substituicao: true,
             acao_ao_fechar: AcaoFechar::Perguntar,
             atalho: AtalhoConfig::default(),
             dicionario: Vec::new(),

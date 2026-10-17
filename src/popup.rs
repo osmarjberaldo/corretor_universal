@@ -46,6 +46,18 @@ pub const ACAO_REVISAR: u32 = 15;
 pub const ACAO_HISTORICO: u32 = 16;
 /// Botão "Gerar novo texto com IA" do balão.
 pub const ACAO_BALAO_IA: u32 = 17;
+/// Botão "Confirmar substituição" do balão de prévia (só troca após o clique).
+pub const ACAO_CONFIRMAR_SUBSTITUICAO: u32 = 18;
+/// Botão "Cancelar" do balão de prévia: fecha sem mexer no texto.
+pub const ACAO_CANCELAR: u32 = 19;
+/// "Corrigir com IA": corrige a gramática com a IA e substitui (só aparece
+/// quando há IA configurada).
+pub const ACAO_CORRIGIR_IA: u32 = 20;
+/// "Reiniciar como administrador": necessário para apps elevados (UIPI).
+pub const ACAO_ADMIN: u32 = 21;
+/// Botão "Substituir" do balão de resultado: cola o texto no campo com foco
+/// (útil em apps que aceitam edição mas não expõem isso de forma confiável).
+pub const ACAO_SUBSTITUIR_RESULTADO: u32 = 22;
 /// Ids `ACAO_SUGESTAO_BASE + i` aplicam **só** a alternativa `i` do primeiro
 /// aviso da análise (é o que a seta do "Corrigir" oferece).
 pub const ACAO_SUGESTAO_BASE: u32 = 100;
@@ -136,6 +148,11 @@ pub enum PopupComando {
     Barra { x: i32, y: i32, itens: Vec<ItemBarra> },
     /// Mostra o balão de resultado em (x, y).
     Balao { x: i32, y: i32, texto: String },
+    /// Balão de **status** (sem botões): usado para avisar "carregando com IA…"
+    /// enquanto a resposta não chega. Fica mais tempo na tela que o balão normal.
+    BalaoStatus { x: i32, y: i32, texto: String },
+    /// Mostra a prévia do novo texto com botões de confirmar/cancelar.
+    Confirmacao { x: i32, y: i32, novo: String },
     /// Esconde tudo.
     Fechar,
 }
@@ -143,6 +160,10 @@ pub enum PopupComando {
 #[derive(Debug, Clone)]
 pub enum PopupEvento {
     Acao(u32),
+    /// O usuário dispensou o balão (clique fora, ESC ou tempo esgotado) sem
+    /// escolher um botão. O motor usa isto para cancelar a prévia pendente e
+    /// destravar a detecção automática.
+    BalaoFechado,
     Fechado,
 }
 
@@ -179,6 +200,8 @@ mod stub {
             let _ = PopupComando::Fechar;
         }
         pub fn balao(&self, _x: i32, _y: i32, _texto: String) {}
+        pub fn balao_status(&self, _x: i32, _y: i32, _texto: String) {}
+        pub fn confirmacao(&self, _x: i32, _y: i32, _novo: String) {}
         pub fn fechar(&self) {}
     }
 }
@@ -242,8 +265,14 @@ mod implementacao {
     const WM_GETTEXT: u32 = 0x000D;
     const WM_SETTEXT: u32 = 0x000C;
     const TIMER_AUTOFECHAR: usize = 1;
-    const MS_AUTO_FECHAR: u32 = 12_000;
-    const MS_AUTO_FECHAR_BALAO: u32 = 20_000;
+    /// Barra e flyout: tempo para o usuário escolher uma ação.
+    const MS_AUTO_FECHAR: u32 = 30_000;
+    /// Balão de resultado: fica até o usuário clicar fora ou apertar ESC.
+    const MS_AUTO_FECHAR_BALAO: u32 = 600_000;
+    /// Balão de status ("carregando com IA…"): só sai quando chega a resposta.
+    const MS_AUTO_FECHAR_STATUS: u32 = 600_000;
+    /// Prévia de substituição: idem (tempo generoso para o usuário decidir).
+    const MS_AUTO_FECHAR_CONFIRMACAO: u32 = 600_000;
     const HWND_TOPMOST: HWND = HWND(-1isize as *mut core::ffi::c_void);
     const HWND_NULO: HWND = HWND(std::ptr::null_mut());
     const HMENU_NULO: HMENU = HMENU(std::ptr::null_mut());
@@ -253,7 +282,7 @@ mod implementacao {
     /// Paleta escura nativa estilo Apple / Windows 11 Fluent (RGB em ordem COLORREF: 0x00BBGGRR).
     const FUNDO: COLORREF = COLORREF(0x0022_1F1E); // RGB(30,31,34) - Fundo escuro nativo idêntico à referência
     const FUNDO_HOVER: COLORREF = COLORREF(0x003A_3635); // RGB(53,54,58) - Realce de hover sutil
-    const BORDA: COLORREF = COLORREF(0x0044_403D); // RGB(61,64,68) - Contorno fino 1px
+    const BORDA: COLORREF = COLORREF(0x0063_5C58); // RGB(88,92,99) - Contorno fino 1px (nítido nos cantos)
     const BORDA_ESPECULAR: COLORREF = COLORREF(0x0058_524E); // RGB(78,82,88) - Brilho sutil na borda superior
     const DIVISOR: COLORREF = COLORREF(0x003D_3936); // RGB(54,57,61) - Divisor vertical 1px
     const TEXTO: COLORREF = COLORREF(0x00E6_E4E2); // RGB(226,228,230) - Tipografia nativa
@@ -349,6 +378,14 @@ mod implementacao {
             let _ = self.tx.send(PopupComando::Balao { x, y, texto });
         }
 
+        pub fn balao_status(&self, x: i32, y: i32, texto: String) {
+            let _ = self.tx.send(PopupComando::BalaoStatus { x, y, texto });
+        }
+
+        pub fn confirmacao(&self, x: i32, y: i32, novo: String) {
+            let _ = self.tx.send(PopupComando::Confirmacao { x, y, novo });
+        }
+
         pub fn fechar(&self) {
             let _ = self.tx.send(PopupComando::Fechar);
         }
@@ -431,6 +468,23 @@ mod implementacao {
         });
     }
 
+    /// Esconde os popups porque o usuário os dispensou (clique fora, ESC ou
+    /// tempo esgotado). Se havia um balão visível, avisa o motor para ele
+    /// cancelar a prévia pendente — assim a detecção automática volta a
+    /// funcionar (ela fica bloqueada enquanto há uma prévia aguardando).
+    unsafe fn esconder_por_dispensa() {
+        let tinha_balao = com_estado(|e| {
+            e.balao
+                .map(|j| windows::Win32::UI::WindowsAndMessaging::IsWindowVisible(j).as_bool())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+        esconder_tudo();
+        if tinha_balao {
+            enviar(PopupEvento::BalaoFechado);
+        }
+    }
+
     unsafe fn destruir(itens: &mut Vec<HWND>) {
         for janela in itens.drain(..) {
             let _ = DestroyWindow(janela);
@@ -508,6 +562,34 @@ mod implementacao {
             w!("EDIT"),
             PCWSTR(t.as_ptr()),
             WINDOW_STYLE(WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY),
+            x,
+            y,
+            largura,
+            altura,
+            pai,
+            HMENU_NULO,
+            HINSTANCE(hinst.0),
+            None,
+        )
+        .ok()?;
+        let _ = windows::Win32::UI::WindowsAndMessaging::SendMessageW(
+            janela,
+            WM_SETFONT,
+            WPARAM(fonte.0 as usize),
+            LPARAM(1),
+        );
+        Some(janela)
+    }
+
+    /// Cria um rótulo estático (título de seção do balão de prévia).
+    unsafe fn criar_static(pai: HWND, texto: &str, x: i32, y: i32, largura: i32, altura: i32, fonte: HFONT) -> Option<HWND> {
+        let t = largo(texto);
+        let hinst = GetModuleHandleW(PCWSTR::null()).ok()?;
+        let janela = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("STATIC"),
+            PCWSTR(t.as_ptr()),
+            WINDOW_STYLE(WS_CHILD | WS_VISIBLE),
             x,
             y,
             largura,
@@ -905,11 +987,13 @@ mod implementacao {
             let h = rc.bottom;
             FillRect(hdc, &rc, r.pincel_fundo);
             
-            // Borda do retângulo arredondado nativo estilo Apple / Fluent Dark
+            // Borda do retângulo arredondado nativo estilo Apple / Fluent Dark.
+            // Traçada 1px para dentro: a região arredondada da janela recortava
+            // a metade externa do traço e deixava os cantos "sem borda".
             let raio = r.raio;
             let pincel_antigo = selecionar(hdc, GetStockObject(HOLLOW_BRUSH));
             let caneta_antiga = selecionar(hdc, HGDIOBJ(r.caneta_borda.0));
-            let _ = RoundRect(hdc, 0, 0, w, h, raio * 2, raio * 2);
+            let _ = RoundRect(hdc, 1, 1, w - 1, h - 1, raio * 2, raio * 2);
 
             // Borda superior sutil com leve brilho especular
             selecionar(hdc, HGDIOBJ(r.caneta_especular.0));
@@ -1051,7 +1135,7 @@ mod implementacao {
             }
             WM_ERASEBKGND => LRESULT(1),
             WM_TIMER => {
-                esconder_tudo();
+                esconder_por_dispensa();
                 LRESULT(0)
             }
             WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC => {
@@ -1214,50 +1298,41 @@ mod implementacao {
             novos.push(edit);
         }
 
+        // Botões em linha: "Substituir" (cola no campo), "Copiar resultado" e
+        // "Gerar novo texto com IA". O "Substituir" cobre apps que aceitam
+        // edição mas não expõem o campo como editável para a detecção.
+        let botoes: [(u32, &str, Icone); 3] = [
+            (super::ACAO_SUBSTITUIR_RESULTADO, "Substituir", Icone::Corrigir),
+            (super::ACAO_COPIAR_RESULTADO, "Copiar resultado", Icone::Copiar),
+            (super::ACAO_BALAO_IA, "Gerar novo texto com IA", Icone::Estrela),
+        ];
+
         let hdc = GetDC(janela);
-        let largura_botao = largura_texto(hdc, r.fonte_item, "Copiar resultado")
-            + px(11.0, r.escala) * 2
-            + px(16.0, r.escala)
-            + px(7.0, r.escala);
-        let largura_botao_ia = largura_texto(hdc, r.fonte_item, "Gerar novo texto com IA")
-            + px(11.0, r.escala) * 2
-            + px(16.0, r.escala)
-            + px(7.0, r.escala);
+        let mut cursor_botao = margem;
+        for (id, rotulo, icone) in botoes {
+            let largura_botao = largura_texto(hdc, r.fonte_item, rotulo)
+                + px(11.0, r.escala) * 2
+                + px(16.0, r.escala)
+                + px(7.0, r.escala);
+            if let Some(botao) = criar_item(
+                janela,
+                id,
+                rotulo,
+                icone,
+                false,
+                false,
+                false,
+                Vec::new(),
+                cursor_botao,
+                altura_texto + margem * 2,
+                largura_botao,
+                altura_botao,
+            ) {
+                novos.push(botao);
+            }
+            cursor_botao += largura_botao + px(8.0, r.escala);
+        }
         let _ = ReleaseDC(janela, hdc);
-
-        if let Some(botao) = criar_item(
-            janela,
-            super::ACAO_COPIAR_RESULTADO,
-            "Copiar resultado",
-            Icone::Copiar,
-            false,
-            false,
-            false,
-            Vec::new(),
-            margem,
-            altura_texto + margem * 2,
-            largura_botao,
-            altura_botao,
-        ) {
-            novos.push(botao);
-        }
-
-        if let Some(botao_ia) = criar_item(
-            janela,
-            super::ACAO_BALAO_IA,
-            "Gerar novo texto com IA",
-            Icone::Estrela,
-            false,
-            false,
-            false,
-            Vec::new(),
-            margem + largura_botao + px(8.0, r.escala),
-            altura_texto + margem * 2,
-            largura_botao_ia,
-            altura_botao,
-        ) {
-            novos.push(botao_ia);
-        }
 
         com_estado(|e| {
             e.itens_balao = novos;
@@ -1266,6 +1341,136 @@ mod implementacao {
         });
         aplicar_regiao(janela, largura, altura, px(16.0, r.escala));
         mostrar(janela, x + px(8.0, r.escala), y + px(16.0, r.escala), largura, altura, MS_AUTO_FECHAR_BALAO);
+    }
+
+    /// Balão de **status** (sem botões): usado para "carregando com IA…" enquanto
+    /// a resposta não chega. É substituído pelo balão de resultado/prévia assim
+    /// que a ação termina.
+    unsafe fn montar_status(janela: HWND, x: i32, y: i32, texto: String) {
+        let r = match recursos() {
+            Some(r) => r,
+            None => return,
+        };
+        let mut antigos = Vec::new();
+        com_estado(|e| antigos = std::mem::take(&mut e.itens_balao));
+        destruir(&mut antigos);
+
+        let margem = px(14.0, r.escala);
+        let largura = px(470.0, r.escala);
+        let altura = px(66.0, r.escala);
+
+        let mut novos = Vec::new();
+        if let Some(edit) = criar_edit(
+            janela,
+            &texto,
+            margem,
+            margem,
+            largura - margem * 2,
+            altura - margem * 2,
+            r.fonte_edit,
+        ) {
+            novos.push(edit);
+        }
+
+        com_estado(|e| {
+            e.itens_balao = novos;
+            e.marca = None;
+            e.divisores.clear();
+        });
+        aplicar_regiao(janela, largura, altura, px(16.0, r.escala));
+        mostrar(
+            janela,
+            x + px(8.0, r.escala),
+            y + px(16.0, r.escala),
+            largura,
+            altura,
+            MS_AUTO_FECHAR_STATUS,
+        );
+    }
+
+    /// Balão de **prévia**: mostra o texto atual e o novo texto, com os botões
+    /// "Confirmar substituição" e "Cancelar". Só troca no campo após confirmar.
+    unsafe fn montar_confirmacao(janela: HWND, x: i32, y: i32, novo: String) {
+        let r = match recursos() {
+            Some(r) => r,
+            None => return,
+        };
+        let mut antigos = Vec::new();
+        com_estado(|e| antigos = std::mem::take(&mut e.itens_balao));
+        destruir(&mut antigos);
+
+        let margem = px(12.0, r.escala);
+        let largura = px(600.0, r.escala);
+        let h_label = px(17.0, r.escala);
+        let h_novo = px(140.0, r.escala);
+        let h_botao = px(30.0, r.escala);
+        let gap = px(6.0, r.escala);
+        let entre = px(2.0, r.escala);
+
+        let y_label = margem;
+        let y_novo = y_label + h_label + entre;
+        let y_botoes = y_novo + h_novo + gap;
+        let altura = y_botoes + h_botao + margem;
+
+        let mut novos: Vec<HWND> = Vec::new();
+        if let Some(l) = criar_static(janela, "Novo texto (será substituído):", margem, y_label, largura - margem * 2, h_label, r.fonte_item) {
+            novos.push(l);
+        }
+        if let Some(edit) = criar_edit(janela, &novo, margem, y_novo, largura - margem * 2, h_novo, r.fonte_edit) {
+            novos.push(edit);
+        }
+
+        let hdc = GetDC(janela);
+        let larg_confirmar = largura_texto(hdc, r.fonte_item, "Confirmar substituição")
+            + px(11.0, r.escala) * 2
+            + px(16.0, r.escala)
+            + px(7.0, r.escala);
+        let larg_cancelar = largura_texto(hdc, r.fonte_item, "Cancelar")
+            + px(11.0, r.escala) * 2
+            + px(16.0, r.escala)
+            + px(7.0, r.escala);
+        let _ = ReleaseDC(janela, hdc);
+
+        if let Some(botao) = criar_item(
+            janela,
+            super::ACAO_CONFIRMAR_SUBSTITUICAO,
+            "Confirmar substituição",
+            Icone::Corrigir,
+            false,
+            false,
+            false,
+            Vec::new(),
+            margem,
+            y_botoes,
+            larg_confirmar,
+            h_botao,
+        ) {
+            novos.push(botao);
+        }
+        if let Some(botao) = criar_item(
+            janela,
+            super::ACAO_CANCELAR,
+            "Cancelar",
+            Icone::Fechar,
+            false,
+            false,
+            false,
+            Vec::new(),
+            margem + larg_confirmar + px(8.0, r.escala),
+            y_botoes,
+            larg_cancelar,
+            h_botao,
+        ) {
+            novos.push(botao);
+        }
+
+        com_estado(|e| {
+            e.itens_balao = novos;
+            e.marca = None;
+            e.divisores.clear();
+        });
+        aplicar_regiao(janela, largura, altura, px(16.0, r.escala));
+        mostrar(janela, x + px(8.0, r.escala), y + px(16.0, r.escala), largura, altura, MS_AUTO_FECHAR_CONFIRMACAO);
     }
 
     // -----------------------------------------------------------------------
@@ -1406,11 +1611,26 @@ mod implementacao {
                             let _ = ShowWindow(janela, SW_HIDE);
                             montar_barra(janela, x, y, itens);
                         }
+                        if let Some(janela) = balao {
+                            let _ = ShowWindow(janela, SW_HIDE);
+                        }
                     }
                     PopupComando::Balao { x, y, texto } => {
                         if let Some(janela) = balao {
                             let _ = ShowWindow(janela, SW_HIDE);
                             montar_balao(janela, x, y, texto);
+                        }
+                    }
+                    PopupComando::BalaoStatus { x, y, texto } => {
+                        if let Some(janela) = balao {
+                            let _ = ShowWindow(janela, SW_HIDE);
+                            montar_status(janela, x, y, texto);
+                        }
+                    }
+                    PopupComando::Confirmacao { x, y, novo } => {
+                        if let Some(janela) = balao {
+                            let _ = ShowWindow(janela, SW_HIDE);
+                            montar_confirmacao(janela, x, y, novo);
                         }
                     }
                     PopupComando::Fechar => esconder_tudo(),
@@ -1422,7 +1642,7 @@ mod implementacao {
             // Como o popup nunca recebe ativação, fechamos por clique fora e ESC.
             let botao = (GetAsyncKeyState(VK_LBUTTON.0 as i32) & 0x8000u16 as i16) != 0;
             if botao && !botao_antes && !cursor_dentro_de_alguma() {
-                esconder_tudo();
+                esconder_por_dispensa();
             }
             botao_antes = botao;
 
@@ -1436,7 +1656,7 @@ mod implementacao {
                 })
                 .unwrap_or(false);
                 if visivel {
-                    esconder_tudo();
+                    esconder_por_dispensa();
                     enviar(PopupEvento::Fechado);
                 }
             }

@@ -748,6 +748,76 @@ impl eframe::App for CorretorApp {
                             .weak(),
                         );
                     });
+
+                    ui.add_space(8.0);
+                    ui.group(|ui| {
+                        ui.label(egui::RichText::new("🧠 Contexto da frase e Confirmação").strong());
+
+                        ui.label(
+                            egui::RichText::new(
+                                "Com a IA configurada acima, o botão \"Corrigir\" primeiro arruma a ortografia \
+                                 (LanguageTool) e depois usa a IA para ajustar a coerência/contexto das frases. \
+                                 Sem IA configurada, fica só a correção ortográfica do LanguageTool.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+
+                        ui.add_space(4.0);
+                        let mut confirmar = est.config.confirmar_substituicao;
+                        if ui
+                            .checkbox(
+                                &mut confirmar,
+                                "Mostrar prévia do novo texto e pedir confirmação antes de substituir",
+                            )
+                            .changed()
+                        {
+                            est.config.confirmar_substituicao = confirmar;
+                            let _ = est.config.salvar();
+                            est.log(format!(
+                                "[Confirmação] Prévia antes de substituir {}",
+                                if confirmar { "ativada" } else { "desativada" }
+                            ));
+                        }
+                        ui.label(
+                            egui::RichText::new(
+                                "Quando ativo, ao clicar em \"Corrigir\" (ou \"Melhorar\") o texto só é substituído \
+                                 depois que você conferir o balão de prévia e clicar em \"Confirmar substituição\".",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                    });
+
+                    ui.add_space(8.0);
+                    ui.group(|ui| {
+                        ui.label(egui::RichText::new("🛡️ Compatibilidade com outros aplicativos").strong());
+                        ui.label(
+                            egui::RichText::new(
+                                "A barra funciona na maioria dos apps. Em aplicativos executados como administrador, \
+                                 o Windows bloqueia a captura e a colagem; reinicie o Corretor como administrador \
+                                 para atender também esses casos.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                        ui.add_space(2.0);
+                        if ui
+                            .add_enabled(
+                                cfg!(windows),
+                                egui::Button::new("🛡️ Reiniciar como administrador"),
+                            )
+                            .on_hover_text(
+                                "Relança o app elevado (UAC) para funcionar em apps abertos como administrador",
+                            )
+                            .clicked()
+                        {
+                            match reiniciar_como_admin() {
+                                Ok(()) => {}
+                                Err(e) => est.log(format!("[Administrador] {}", e)),
+                            }
+                        }
+                    });
                 }
                 AbaApp::Dicionario => {
                     ui.group(|ui| {
@@ -1282,4 +1352,42 @@ pub fn reiniciar_aplicativo() {
         let _ = std::process::Command::new(exe).spawn();
         std::process::exit(0);
     }
+}
+
+/// Reinicia o aplicativo **como administrador** (ShellExecute com o verbo
+/// "runas"). Necessário para que a captura e a colagem funcionem em aplicativos
+/// que rodam elevados: o Windows bloqueia o envio de teclado/clipboard entre
+/// processos de níveis de integridade diferentes (UIPI).
+#[cfg(windows)]
+pub fn reiniciar_como_admin() -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_l: Vec<u16> = exe.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let operacao: Vec<u16> = "runas".encode_utf16().chain(std::iter::once(0)).collect();
+
+    let resultado = unsafe {
+        ShellExecuteW(
+            HWND(std::ptr::null_mut()),
+            PCWSTR(operacao.as_ptr()),
+            PCWSTR(exe_l.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    // HINSTANCE <= 32 indica erro (32 = UAC cancelado pelo usuário).
+    if resultado.0 as isize <= 32 {
+        return Err("Não foi possível elevar (o pedido de administrador foi cancelado?).".to_string());
+    }
+    std::process::exit(0);
+}
+
+#[cfg(not(windows))]
+pub fn reiniciar_como_admin() -> Result<(), String> {
+    Err("Reiniciar como administrador só é necessário/suportado no Windows.".to_string())
 }

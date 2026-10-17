@@ -9,10 +9,11 @@ use crate::config::Config;
 use crate::correcao::Aviso;
 use crate::deteccao;
 use crate::popup::{
-    Icone, ItemBarra, PopupEvento, Popups, ACAO_NENHUMA, ACAO_ABRIR_APP, ACAO_COPIAR, ACAO_CORRIGIR,
-    ACAO_CORRIGIR_COPIAR, ACAO_DICIONARIO, ACAO_FECHAR, ACAO_HISTORICO, ACAO_MAIS, ACAO_MELHORAR, ACAO_MELHORAR_CURTO,
-    ACAO_MELHORAR_FORMAL, ACAO_MELHORAR_SIMPLES, ACAO_PAUSAR, ACAO_REVISAR, ACAO_SAIR,
-    ACAO_SUGESTAO_BASE, MAX_SUGESTOES,
+    Icone, ItemBarra, PopupEvento, Popups, ACAO_ADMIN, ACAO_CANCELAR, ACAO_CONFIRMAR_SUBSTITUICAO,
+    ACAO_NENHUMA, ACAO_ABRIR_APP, ACAO_COPIAR, ACAO_CORRIGIR, ACAO_CORRIGIR_COPIAR,
+    ACAO_CORRIGIR_IA, ACAO_DICIONARIO, ACAO_FECHAR, ACAO_HISTORICO, ACAO_MAIS, ACAO_MELHORAR,
+    ACAO_MELHORAR_CURTO, ACAO_MELHORAR_FORMAL, ACAO_MELHORAR_SIMPLES, ACAO_PAUSAR, ACAO_REVISAR,
+    ACAO_SAIR, ACAO_SUGESTAO_BASE, MAX_SUGESTOES,
 };
 use crate::tray::AcaoBandeja;
 use std::collections::HashSet;
@@ -37,12 +38,25 @@ pub enum Mensagem {
     Bandeja(AcaoBandeja),
 }
 
+/// Substituição calculada e aguardando a confirmação do usuário (balão de prévia).
+#[derive(Debug, Clone)]
+pub struct Pendente {
+    pub original: String,
+    pub novo: String,
+    pub editavel: bool,
+    pub tipo: String,
+    pub x: i32,
+    pub y: i32,
+}
+
 /// Estado compartilhado entre a GUI, o motor e os threads de ação.
 pub struct Compartilhado {
     pub config: Config,
     pub logs: Vec<String>,
     /// Último texto devolvido pela correção/IA (mostrado na janela e no balão).
     pub resultado: Option<String>,
+    /// Substituição aguardando confirmação (prévia exibida no balão).
+    pub pendente: Option<Pendente>,
     /// Estado da conexão de teste com a IA (mensagem).
     pub status_ia: String,
     /// Pedido para a GUI mostrar/esconder a janela: Some(true) = mostrar.
@@ -79,6 +93,7 @@ impl Compartilhado {
             config,
             logs,
             resultado: None,
+            pendente: None,
             status_ia: String::new(),
             janela: None,
             ocupado: false,
@@ -180,11 +195,17 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
             if foco_e_nosso() {
                 return;
             }
-            if let Some(foco) = deteccao::analisar_foco() {
-                if foco.tem_text_pattern && !foco.tem_selecao {
-                    return;
-                }
+            // Não roubar a confirmação: enquanto há uma prévia de substituição
+            // aguardando o usuário, a detecção automática não reexibe a barra
+            // (o que esconderia o balão e zeraria a substituição pendente).
+            // não roubar a confirmação: enquanto há uma prévia...
+            if estado.lock().map(|c| c.pendente.is_some()).unwrap_or(false) {
+                return;
             }
+            // A validação da seleção já é feita pela captura (que conhece o
+            // arrasto real): refazê-la aqui, centenas de ms depois, corria o
+            // risco de "perder" a seleção e não mostrar a barra. Mantemos só as
+            // travas confiáveis (foco nosso / prévia pendente).
             contexto.foco_editavel = editavel;
             contexto.posicao = (x, y);
             mostrar_barra(estado, popups, x, y, true);
@@ -202,9 +223,24 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
                     copiar_resultado(estado, popups);
                     return;
                 }
+                // Botão "Substituir" do balão: cola o texto já corrigido no
+                // campo com foco (útil em apps que só copiavam antes).
+                if id == crate::popup::ACAO_SUBSTITUIR_RESULTADO {
+                    substituir_resultado(estado, popups);
+                    return;
+                }
                 // Botão "Gerar novo texto com IA" do balão:
                 if id == crate::popup::ACAO_BALAO_IA {
                     gerar_ia_do_balao(estado, popups, contexto.posicao);
+                    return;
+                }
+                // Balão de prévia: só substitui se o usuário confirmar.
+                if id == ACAO_CONFIRMAR_SUBSTITUICAO {
+                    confirmar_substituicao(estado, popups);
+                    return;
+                }
+                if id == ACAO_CANCELAR {
+                    cancelar_substituicao(estado, popups);
                     return;
                 }
                 // "⋮" e "✕" mexem no app, não no texto: não passam pelo worker.
@@ -231,11 +267,22 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
                 // "Só isto: …": aplica apenas a alternativa escolhida na seta.
                 let deslocamento = id.wrapping_sub(ACAO_SUGESTAO_BASE);
                 if (deslocamento as usize) < MAX_SUGESTOES {
-                    aplicar_sugestao(estado, popups, deslocamento as usize, contexto.foco_editavel);
+                    aplicar_sugestao(estado, popups, deslocamento as usize, contexto.foco_editavel, contexto.posicao);
                     return;
                 }
                 let (x, y) = contexto.posicao;
                 executar(estado, popups, id, contexto.foco_editavel, x, y);
+            }
+            PopupEvento::BalaoFechado => {
+                // O usuário dispensou o balão (clique fora/ESC/tempo) sem
+                // escolher: cancela a prévia pendente e destrava a detecção.
+                if let Ok(mut c) = estado.lock() {
+                    if c.pendente.take().is_some() {
+                        c.log(
+                            "[Confirmação] Prévia fechada sem confirmar; o texto não foi alterado.",
+                        );
+                    }
+                }
             }
             PopupEvento::Fechado => {}
         },
@@ -306,12 +353,18 @@ fn tratar(mensagem: Mensagem, estado: &Estado, popups: &Arc<Popups>, contexto: &
 ///
 /// Clique no rótulo = ação principal; clique na seta (ou no "⋮") = flyout de
 /// variantes. A seta do "Corrigir" mostra as **alternativas reais** do primeiro
-/// aviso encontrado (como no LanguageTool).
-pub fn itens_menu(analise: &[Aviso], analisando: bool) -> Vec<ItemBarra> {
+/// aviso encontrado (como no LanguageTool) e, quando há IA configurada, também
+/// a opção de corrigir a gramática direto com a IA.
+pub fn itens_menu(analise: &[Aviso], analisando: bool, ia_configurada: bool) -> Vec<ItemBarra> {
     let mut submenu_corrigir = vec![
         (ACAO_CORRIGIR, "Substituir a seleção".to_string()),
         (ACAO_CORRIGIR_COPIAR, "Apenas copiar a correção".to_string()),
     ];
+
+    // Opção direta: corrige a gramática com a IA e substitui o texto.
+    if ia_configurada {
+        submenu_corrigir.push((ACAO_CORRIGIR_IA, "Corrigir com IA (gramática) e substituir".to_string()));
+    }
 
     match primeiro_com_sugestao(analise) {
         Some(aviso) => {
@@ -339,6 +392,7 @@ pub fn itens_menu(analise: &[Aviso], analisando: bool) -> Vec<ItemBarra> {
         ItemBarra::marca(),
         ItemBarra::acao(ACAO_CORRIGIR, "Corrigir", Icone::Corrigir)
             .com_divisor()
+            .com_seta()
             .com_submenu(submenu_corrigir),
         ItemBarra::acao(ACAO_MELHORAR, "", Icone::Estrela)
             .somente_icone()
@@ -353,14 +407,20 @@ pub fn itens_menu(analise: &[Aviso], analisando: bool) -> Vec<ItemBarra> {
         ItemBarra::acao(ACAO_MAIS, "Mais ações", Icone::Mais)
             .somente_icone()
             .com_divisor()
-            .com_submenu(vec![
-                (ACAO_REVISAR, "Revisar avisos na janela…".to_string()),
-                (ACAO_HISTORICO, "Histórico de correções (10 recentes)".to_string()),
-                (ACAO_ABRIR_APP, "Configurações do app".to_string()),
-                (ACAO_DICIONARIO, "Adicionar seleção ao dicionário".to_string()),
-                (ACAO_PAUSAR, "Pausar a captura".to_string()),
-                (ACAO_SAIR, "Sair".to_string()),
-            ]),
+            .com_submenu({
+                let mut itens = vec![
+                    (ACAO_REVISAR, "Revisar avisos na janela…".to_string()),
+                    (ACAO_HISTORICO, "Histórico de correções (10 recentes)".to_string()),
+                    (ACAO_ABRIR_APP, "Configurações do app".to_string()),
+                    (ACAO_DICIONARIO, "Adicionar seleção ao dicionário".to_string()),
+                ];
+                if cfg!(windows) {
+                    itens.push((ACAO_ADMIN, "Reiniciar como administrador".to_string()));
+                }
+                itens.push((ACAO_PAUSAR, "Pausar a captura".to_string()));
+                itens.push((ACAO_SAIR, "Sair".to_string()));
+                itens
+            }),
         ItemBarra::acao(ACAO_FECHAR, "Fechar", Icone::Fechar).somente_icone(),
     ]
 }
@@ -374,7 +434,12 @@ pub fn primeiro_com_sugestao(analise: &[Aviso]) -> Option<&Aviso> {
 /// selecionado (a seta passa a mostrar as alternativas quando ela chega).
 fn mostrar_barra(estado: &Estado, popups: &Arc<Popups>, x: i32, y: i32, analisar: bool) {
     let itens = match estado.lock() {
-        Ok(c) => itens_menu(&c.analise, c.analisando),
+        Ok(mut c) => {
+            // nova seleção invalida qualquer prévia de substituição pendente
+            c.pendente = None;
+            let ia = c.config.ia_configurada();
+            itens_menu(&c.analise, c.analisando, ia)
+        }
         Err(_) => return,
     };
     popups.barra(x, y, itens);
@@ -448,7 +513,7 @@ fn mostrar_barra(estado: &Estado, popups: &Arc<Popups>, x: i32, y: i32, analisar
         if atual && popups_worker.barra_aberta() {
             // atualiza a seta do "Corrigir" com as alternativas reais
             let itens = match estado_worker.lock() {
-                Ok(c) => itens_menu(&c.analise, false),
+                Ok(c) => itens_menu(&c.analise, false, c.config.ia_configurada()),
                 Err(_) => return,
             };
             popups_worker.barra(x_antes, y_antes, itens);
@@ -513,7 +578,7 @@ fn verificar_selecao(estado: &Estado, popups: &Arc<Popups>, abrir_janela: bool) 
 }
 
 /// Aplica **apenas** a alternativa escolhida na seta do "Corrigir".
-fn aplicar_sugestao(estado: &Estado, popups: &Arc<Popups>, indice: usize, editavel: bool) {
+fn aplicar_sugestao(estado: &Estado, popups: &Arc<Popups>, indice: usize, editavel: bool, pos: (i32, i32)) {
     {
         let mut c = match estado.lock() {
             Ok(c) => c,
@@ -576,9 +641,16 @@ fn aplicar_sugestao(estado: &Estado, popups: &Arc<Popups>, indice: usize, editav
                 return Ok(final_texto);
             }
 
-            entregar(&estado_worker, popups_worker.as_ref(), editavel, &final_texto)?;
+            entregar(
+                &estado_worker,
+                popups_worker.as_ref(),
+                editavel,
+                &texto,
+                &final_texto,
+                "Alternativa de Correção",
+                pos,
+            )?;
             if let Ok(mut c) = estado_worker.lock() {
-                c.historico.adicionar(&texto, &final_texto, "Alternativa de Correção");
                 c.analise.clear();
                 c.analise_texto = None;
             }
@@ -632,6 +704,13 @@ fn acao_controle(id: u32, estado: &Estado, popups: &Arc<Popups>) -> bool {
             adicionar_ao_dicionario(estado, popups);
             true
         }
+        ACAO_ADMIN => {
+            match crate::reiniciar_como_admin() {
+                Ok(()) => {}
+                Err(e) => logar(estado, format!("[Administrador] {}", e)),
+            }
+            true
+        }
         ACAO_SAIR => std::process::exit(0),
         _ => false,
     }
@@ -653,6 +732,30 @@ fn copiar_resultado(estado: &Estado, popups: &Arc<Popups>) {
     popups.fechar();
 }
 
+/// Cola no campo com foco o texto já corrigido (botão "Substituir" do balão).
+/// Serve para apps que aceitam edição mas não são detectados como editáveis:
+/// em vez de só copiar, o usuário força a substituição.
+fn substituir_resultado(estado: &Estado, popups: &Arc<Popups>) {
+    let texto = match estado.lock() {
+        Ok(c) => c.resultado.clone().filter(|t| !t.trim().is_empty()),
+        Err(_) => None,
+    };
+    let Some(texto) = texto else {
+        logar(estado, "[Aviso] Não há resultado para substituir.");
+        popups.fechar();
+        return;
+    };
+    match crate::aplicacao::substituir_selecao(estado, &texto) {
+        Ok(true) => logar(estado, format!("Substituído no campo: {}", resumir(&texto))),
+        Ok(false) => logar(
+            estado,
+            "Campo não aceitou a substituição; o texto ficou na área de transferência.",
+        ),
+        Err(e) => logar(estado, format!("[Erro] {}", e)),
+    }
+    popups.fechar();
+}
+
 /// Gera novo texto com IA a partir do conteúdo exibido no balão flutuante.
 fn gerar_ia_do_balao(estado: &Estado, popups: &Arc<Popups>, pos: (i32, i32)) {
     let (config, texto) = match estado.lock() {
@@ -670,7 +773,7 @@ fn gerar_ia_do_balao(estado: &Estado, popups: &Arc<Popups>, pos: (i32, i32)) {
     }
 
     logar(estado, format!("[IA] Gerando novo texto para o balão: {}", resumir(&texto)));
-    popups.balao(pos.0, pos.1, "⏳ Gerando novo texto com IA...".to_string());
+    popups.balao_status(pos.0, pos.1, BALAO_AGUARDANDO_IA.to_string());
 
     let estado_clone = Arc::clone(estado);
     let popups_clone = Arc::clone(popups);
@@ -782,6 +885,7 @@ fn eh_acao_de_texto(acao: u32) -> bool {
         acao,
         ACAO_CORRIGIR
             | ACAO_CORRIGIR_COPIAR
+            | ACAO_CORRIGIR_IA
             | ACAO_COPIAR
             | ACAO_MELHORAR
             | ACAO_MELHORAR_FORMAL
@@ -797,7 +901,18 @@ fn eh_acao_de_ia(acao: u32) -> bool {
     )
 }
 
-fn executar(estado: &Estado, popups: &Arc<Popups>, acao: u32, editavel: bool, _x: i32, _y: i32) {
+/// Texto do balão exibido enquanto a IA processa (é trocado pelo resultado).
+const BALAO_AGUARDANDO_IA: &str =
+    "⏳ Aguardando a IA corrigir a gramática do texto…\n(o balão do texto corrigido aparece assim que a resposta chegar)";
+
+/// Mostra o balão de status "aguardando IA" (só quando os balões estão ligados).
+fn mostrar_status(balao_ativo: bool, popups: &Popups, pos: (i32, i32), mensagem: &str) {
+    if balao_ativo {
+        popups.balao_status(pos.0, pos.1, mensagem.to_string());
+    }
+}
+
+fn executar(estado: &Estado, popups: &Arc<Popups>, acao: u32, editavel: bool, x: i32, y: i32) {
     // Rede de segurança: um id desconhecido nunca deve virar uma correção.
     if !eh_acao_de_texto(acao) {
         logar(estado, format!("[Aviso] Ação {} ignorada.", acao));
@@ -817,7 +932,7 @@ fn executar(estado: &Estado, popups: &Arc<Popups>, acao: u32, editavel: bool, _x
     let estado_worker = Arc::clone(estado);
     let popups_worker = Arc::clone(popups);
     thread::spawn(move || {
-        let resultado = executar_acao(&estado_worker, acao, editavel, popups_worker.as_ref());
+        let resultado = executar_acao(&estado_worker, acao, editavel, popups_worker.as_ref(), (x, y));
         if let (Ok(mut c), Ok(texto)) = (estado_worker.lock(), resultado) {
             c.resultado = Some(texto);
         }
@@ -833,6 +948,7 @@ fn executar_acao(
     acao: u32,
     editavel: bool,
     popups: &Popups,
+    pos: (i32, i32),
 ) -> Result<String, ()> {
     let (idioma, dicionario, config) = match estado.lock() {
         Ok(c) => (
@@ -861,31 +977,78 @@ fn executar_acao(
         return Ok(texto);
     }
 
-    let final_texto = if eh_acao_de_ia(acao) {
+    let balao_ativo = config.balao_ativo;
+    let mut status_mostrado = false;
+    let final_texto = if acao == ACAO_CORRIGIR_IA {
+        // Opção direta: corrige a gramática/ortografia usando a IA e substitui.
+        if !config.ia_configurada() {
+            logar(estado, "[IA] Configure a IA antes de usar \"Corrigir com IA\".");
+            popups.balao(pos.0, pos.1, "Configure a URL e o modelo de IA nas Opções do app.".to_string());
+            return Err(());
+        }
+        logar(estado, "[IA] Corrigindo a gramática com a IA...");
+        mostrar_status(balao_ativo, popups, pos, BALAO_AGUARDANDO_IA);
+        status_mostrado = true;
+        match crate::ia::corrigir_com_ia(&texto, &config) {
+            Ok(t) => t,
+            Err(e) => {
+                logar(estado, format!("[Erro na IA] {}", e));
+                popups.balao(pos.0, pos.1, format!("Falha na IA:\n{}", e));
+                return Err(());
+            }
+        }
+    } else if eh_acao_de_ia(acao) {
         let estilo = match acao {
             ACAO_MELHORAR_FORMAL => crate::ia::Estilo::Formal,
             ACAO_MELHORAR_SIMPLES => crate::ia::Estilo::Simples,
             ACAO_MELHORAR_CURTO => crate::ia::Estilo::Curto,
             _ => crate::ia::Estilo::Padrao,
         };
+        logar(estado, "[IA] Reescrevendo o texto com a IA...");
+        mostrar_status(balao_ativo, popups, pos, BALAO_AGUARDANDO_IA);
+        status_mostrado = true;
         match crate::ia::melhorar(&texto, &config, estilo) {
             Ok(t) => t,
             Err(e) => {
                 logar(estado, format!("[Erro na IA] {}", e));
-                let (x, y) = posicao_cursor();
-                popups.balao(x, y, format!("Falha na IA:\n{}", e));
+                popups.balao(pos.0, pos.1, format!("Falha na IA:\n{}", e));
                 return Err(());
             }
         }
     } else {
         match crate::correcao::corrigir_via_api(&texto, &idioma, &dicionario) {
-            Ok(t) => t,
+            Ok(t) => {
+                // Com IA configurada, além da ortografia, ajustar também a
+                // gramática/contexto da frase com IA (LanguageTool + IA).
+                if config.ia_configurada() {
+                    logar(estado, "[Contexto] Ajustando o contexto da frase com IA...");
+                    mostrar_status(balao_ativo, popups, pos, BALAO_AGUARDANDO_IA);
+                    status_mostrado = true;
+                    match crate::ia::corrigir_contexto(&t, &config) {
+                        Ok(contextual) => contextual,
+                        Err(e_ctx) => {
+                            logar(
+                                estado,
+                                format!(
+                                    "[Aviso Contexto] Não foi possível ajustar o contexto ({}); mantendo a correção ortográfica.",
+                                    e_ctx
+                                ),
+                            );
+                            t
+                        }
+                    }
+                } else {
+                    t
+                }
+            }
             Err(e) => {
                 if config.ia_configurada() {
                     logar(
                         estado,
                         format!("[Aviso API] Falha na rede ({}); acionando IA personalizada como fallback...", e),
                     );
+                    mostrar_status(balao_ativo, popups, pos, BALAO_AGUARDANDO_IA);
+                    status_mostrado = true;
                     match crate::ia::corrigir_com_ia(&texto, &config) {
                         Ok(t) => t,
                         Err(e_ia) => {
@@ -900,6 +1063,13 @@ fn executar_acao(
             }
         }
     };
+
+    // Enquanto a IA trabalhava, mostramos o balão "aguardando IA…". A partir
+    // daqui os caminhos abaixo exibem o balão definitivo (resultado/prévia):
+    // fechamos o de status para não deixar dois balões concorrendo.
+    if status_mostrado {
+        popups.fechar();
+    }
 
     // 2) corrigir sem tocar no campo ("Apenas copiar a correção").
     if acao == ACAO_CORRIGIR_COPIAR {
@@ -918,37 +1088,101 @@ fn executar_acao(
     }
 
     if final_texto == texto {
+        let era_ia = eh_acao_de_ia(acao) || acao == ACAO_CORRIGIR_IA;
         logar(
             estado,
-            if eh_acao_de_ia(acao) {
+            if era_ia {
                 "A IA devolveu o mesmo texto; nada foi alterado."
             } else {
                 "Resultado: Nenhum erro encontrado."
             },
         );
+        if era_ia && balao_ativo {
+            popups.balao(
+                pos.0,
+                pos.1,
+                "A IA devolveu o mesmo texto — nada precisava ser corrigido.".to_string(),
+            );
+        }
         return Ok(final_texto);
     }
 
-    entregar(estado, popups, editavel, &final_texto)?;
-
-    let tipo = if eh_acao_de_ia(acao) {
+    let tipo = if acao == ACAO_CORRIGIR_IA {
+        "Correção com IA"
+    } else if eh_acao_de_ia(acao) {
         "Melhoria (IA)"
     } else {
         "Correção Ortográfica"
     };
 
+    entregar(estado, popups, editavel, &texto, &final_texto, tipo, pos)?;
+
     if let Ok(mut c) = estado.lock() {
-        c.historico.adicionar(&texto, &final_texto, tipo);
         c.janela = None;
     }
     Ok(final_texto)
 }
 
-/// Entrega o texto final: cola no campo (quando é editável) ou copia e mostra
-/// o balão (se ativado). Usado pelo "Corrigir", pelo "Melhorar" e pela seta com alternativas.
-fn entregar(estado: &Estado, popups: &Popups, editavel: bool, final_texto: &str) -> Result<(), ()> {
-    let balao_ativo = estado.lock().map(|c| c.config.balao_ativo).unwrap_or(true);
+/// Entrega o texto final.
+///
+/// Se a opção "Mostrar prévia e pedir confirmação" estiver ativa e o campo for
+/// editável, **não** substitui ainda: guarda a substituição pendente e mostra o
+/// balão de prévia (só troca após "Confirmar substituição"). Caso contrário,
+/// cola no campo (campo editável) ou copia e mostra o balão de resultado.
+/// Usado pelo "Corrigir", pelo "Melhorar" e pela seta com alternativas.
+///
+/// `pos` é a posição onde a barra de ações apareceu: o balão de prévia usa a
+/// mesma posição, ficando no mesmo lugar dos botões da ferramenta.
+fn entregar(
+    estado: &Estado,
+    popups: &Popups,
+    editavel: bool,
+    original: &str,
+    final_texto: &str,
+    tipo: &str,
+    pos: (i32, i32),
+) -> Result<(), ()> {
+    let (confirmar, balao_ativo) = match estado.lock() {
+        Ok(c) => (c.config.confirmar_substituicao, c.config.balao_ativo),
+        Err(_) => (false, true),
+    };
 
+    if confirmar && editavel && Popups::suportado() {
+        if let Ok(mut c) = estado.lock() {
+            c.pendente = Some(Pendente {
+                original: original.to_string(),
+                novo: final_texto.to_string(),
+                editavel,
+                tipo: tipo.to_string(),
+                x: pos.0,
+                y: pos.1,
+            });
+        }
+        logar(
+            estado,
+            "[Confirmação] Prévia exibida. Clique em \"Confirmar substituição\" para aplicar.",
+        );
+        popups.confirmacao(pos.0, pos.1, final_texto.to_string());
+        return Ok(());
+    }
+
+    aplicar_no_campo(estado, popups, editavel, final_texto, balao_ativo, pos)?;
+
+    if let Ok(mut c) = estado.lock() {
+        c.historico.adicionar(original, final_texto, tipo);
+    }
+    Ok(())
+}
+
+/// Aplica o texto de fato: cola no campo (editável) ou copia e mostra o balão.
+fn aplicar_no_campo(
+    estado: &Estado,
+    popups: &Popups,
+    editavel: bool,
+    final_texto: &str,
+    balao_ativo: bool,
+    pos: (i32, i32),
+) -> Result<(), ()> {
     if editavel && Popups::suportado() {
         match crate::aplicacao::substituir_selecao(estado, final_texto) {
             Ok(true) => logar(estado, format!("Aplicado no campo: {}", resumir(final_texto))),
@@ -956,8 +1190,7 @@ fn entregar(estado: &Estado, popups: &Popups, editavel: bool, final_texto: &str)
                 logar(estado, "Campo não aceitou a colagem; resultado copiado para a área de transferência.");
                 let _ = crate::aplicacao::copiar_para_clipboard(final_texto);
                 if balao_ativo {
-                    let (x, y) = posicao_cursor();
-                    popups.balao(x, y, final_texto.to_string());
+                    popups.balao(pos.0, pos.1, final_texto.to_string());
                 }
             }
             Err(e) => logar(estado, format!("[Erro] {}", e)),
@@ -974,10 +1207,46 @@ fn entregar(estado: &Estado, popups: &Popups, editavel: bool, final_texto: &str)
         format!("Campo não editável; copiado: {}", resumir(final_texto)),
     );
     if balao_ativo {
-        let (x, y) = posicao_cursor();
-        popups.balao(x, y, final_texto.to_string());
+        popups.balao(pos.0, pos.1, final_texto.to_string());
     }
     Ok(())
+}
+
+/// Confirma a substituição que estava no balão de prévia e aplica de fato.
+fn confirmar_substituicao(estado: &Estado, popups: &Arc<Popups>) {
+    let pendente = match estado.lock() {
+        Ok(mut c) => c.pendente.take(),
+        Err(_) => None,
+    };
+    let Some(p) = pendente else {
+        popups.fechar();
+        return;
+    };
+
+    // esconde a prévia antes de aplicar (pode reaparecer o balão de resultado)
+    popups.fechar();
+    let balao_ativo = estado.lock().map(|c| c.config.balao_ativo).unwrap_or(true);
+    let _ = aplicar_no_campo(estado, popups.as_ref(), p.editavel, &p.novo, balao_ativo, (p.x, p.y));
+
+    if let Ok(mut c) = estado.lock() {
+        c.historico.adicionar(&p.original, &p.novo, &p.tipo);
+        c.resultado = Some(p.novo.clone());
+        c.log(format!(
+            "[Confirmação] Substituição confirmada: {}",
+            resumir(&p.novo)
+        ));
+        c.janela = None;
+    }
+}
+
+/// Cancela a substituição pendente: fecha a prévia sem mexer no texto.
+fn cancelar_substituicao(estado: &Estado, popups: &Arc<Popups>) {
+    if let Ok(mut c) = estado.lock() {
+        if c.pendente.take().is_some() {
+            c.log("[Confirmação] Substituição cancelada; o texto não foi alterado.");
+        }
+    }
+    popups.fechar();
 }
 
 /// Pega o texto selecionado: primeiro pelo UI Automation (não mexe no
@@ -1039,7 +1308,7 @@ mod testes {
     #[test]
     fn a_seta_mostra_as_alternativas_reais_da_api() {
         let avisos = vec![aviso("programaçao", &["programação", "programadão"])];
-        let submenu = submenu_corrigir(&itens_menu(&avisos, false));
+        let submenu = submenu_corrigir(&itens_menu(&avisos, false, false));
         let rotulos: Vec<&str> = submenu.iter().map(|(_, r)| r.as_str()).collect();
         assert!(rotulos.contains(&"Só isto: programaçao → programação"), "{:?}", rotulos);
         assert!(rotulos.contains(&"Só isto: programaçao → programadão"), "{:?}", rotulos);
@@ -1052,12 +1321,12 @@ mod testes {
 
     #[test]
     fn a_seta_avisa_enquanto_esta_analisando() {
-        let submenu = submenu_corrigir(&itens_menu(&[], true));
+        let submenu = submenu_corrigir(&itens_menu(&[], true, false));
         assert!(submenu
             .iter()
             .any(|(id, r)| *id == ACAO_NENHUMA && r.contains("Analisando")));
 
-        let submenu = submenu_corrigir(&itens_menu(&[], false));
+        let submenu = submenu_corrigir(&itens_menu(&[], false, false));
         assert!(submenu
             .iter()
             .any(|(id, r)| *id == ACAO_REVISAR && r.contains("lista de avisos")));
@@ -1068,10 +1337,19 @@ mod testes {
         let mut protegido = aviso("Rust", &["Rush"]);
         protegido.protegido = true;
         let avisos = vec![protegido, aviso("vc", &["você"])];
-        let submenu = submenu_corrigir(&itens_menu(&avisos, false));
+        let submenu = submenu_corrigir(&itens_menu(&avisos, false, false));
         let rotulos: Vec<&str> = submenu.iter().map(|(_, r)| r.as_str()).collect();
         assert!(rotulos.iter().any(|r| r.contains("vc → você")), "{:?}", rotulos);
         assert!(!rotulos.iter().any(|r| r.contains("Rush")), "{:?}", rotulos);
+    }
+
+    #[test]
+    fn corrigir_com_ia_aparece_somente_com_ia_configurada() {
+        let sem_ia = submenu_corrigir(&itens_menu(&[], false, false));
+        assert!(!sem_ia.iter().any(|(id, _)| *id == ACAO_CORRIGIR_IA));
+
+        let com_ia = submenu_corrigir(&itens_menu(&[], false, true));
+        assert!(com_ia.iter().any(|(id, r)| *id == ACAO_CORRIGIR_IA && r.contains("IA")));
     }
 
     #[test]

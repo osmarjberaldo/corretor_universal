@@ -47,11 +47,22 @@ mod win {
     use std::time::{Duration, Instant};
     use uiautomation::patterns::{UITextPattern, UIValuePattern};
     use uiautomation::UIAutomation;
-    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, VK_CONTROL, VK_LBUTTON, VK_MENU,
     };
-    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetClassNameW, GetCursorPos, GetForegroundWindow, GetGUIThreadInfo, GetWindowLongPtrW,
+        GetWindowThreadProcessId, SendMessageW, GWL_STYLE, GUITHREADINFO,
+    };
+
+    // Estilos/mensagens do Win32 usados no fallback de controles de edição
+    // clássicos (Edit / RichEdit / Scintilla), que não expõem UI Automation.
+    const ES_PASSWORD: u32 = 0x0020;
+    const ES_READONLY: u32 = 0x0800;
+    const EM_GETSEL: u32 = 0x00B0;
+    const WM_GETTEXT: u32 = 0x000D;
+    const WM_GETTEXTLENGTH: u32 = 0x000E;
 
     /// Sobe o observador de mouse e teclado, que avisa o motor quando há seleção ou atalho.
     pub fn iniciar(canal: Sender<Mensagem>) {
@@ -59,13 +70,48 @@ mod win {
     }
 
     pub fn analisar_foco() -> Option<Foco> {
-        let automation = UIAutomation::new().ok()?;
-        analisar(&automation)
+        let automacao = UIAutomation::new().ok();
+        analisar_completo(automacao.as_ref())
     }
 
-    /// Texto selecionado no campo com foco, lido pelo UI Automation (não mexe
-    /// no clipboard).
+    /// Texto selecionado no campo com foco. Primeiro pelo UI Automation (não
+    /// mexe no clipboard); se o app não expuser UIA, cai no fallback nativo dos
+    /// controles de edição clássicos (Edit/RichEdit/Scintilla).
     pub fn texto_selecionado() -> Option<String> {
+        if let Some(texto) = texto_selecionado_uia() {
+            return Some(texto);
+        }
+        unsafe { texto_selecionado_win32() }
+    }
+
+    /// Conteúdo do campo com foco, quando ele expõe ValuePattern (usado para
+    /// conferir se a colagem realmente entrou). Sem UIA, tenta o fallback.
+    pub fn valor_focado() -> Option<String> {
+        if let Some(valor) = valor_focado_uia() {
+            return Some(valor);
+        }
+        unsafe { hwnd_foco().and_then(|janela| texto_completo(janela)) }
+    }
+
+    /// Mescla o que o UI Automation enxerga com o fallback nativo, para que a
+    /// detecção funcione também em aplicativos que não suportam UIA.
+    fn analisar_completo(automacao: Option<&UIAutomation>) -> Option<Foco> {
+        let uia = automacao.and_then(analisar);
+        let nativo = unsafe { foco_win32() };
+        match (uia, nativo) {
+            (Some(mut u), Some(f)) => {
+                // mantém pid/senha do UIA e completa o que faltava
+                u.editavel |= f.editavel;
+                u.tem_selecao |= f.tem_selecao;
+                u.suporta_texto |= f.suporta_texto;
+                Some(u)
+            }
+            (Some(u), None) => Some(u),
+            (None, f) => f,
+        }
+    }
+
+    fn texto_selecionado_uia() -> Option<String> {
         let automation = UIAutomation::new().ok()?;
         let elemento = automation.get_focused_element().ok()?;
         let texto = elemento.get_pattern::<UITextPattern>().ok()?;
@@ -84,27 +130,144 @@ mod win {
         }
     }
 
-    /// Conteúdo do campo com foco, quando ele expõe ValuePattern (usado para
-    /// conferir se a colagem realmente entrou).
-    pub fn valor_focado() -> Option<String> {
+    fn valor_focado_uia() -> Option<String> {
         let automation = UIAutomation::new().ok()?;
         let elemento = automation.get_focused_element().ok()?;
-        elemento
-            .get_pattern::<UIValuePattern>()
-            .ok()?
-            .get_value()
-            .ok()
+        elemento.get_pattern::<UIValuePattern>().ok()?.get_value().ok()
+    }
+
+    /// Janela que está com o foco de teclado no thread em primeiro plano.
+    /// Funciona para qualquer aplicativo (mesmo sem UI Automation).
+    unsafe fn hwnd_foco() -> Option<HWND> {
+        let primeiro_plano = GetForegroundWindow();
+        if primeiro_plano.is_invalid() {
+            return None;
+        }
+        let thread = GetWindowThreadProcessId(primeiro_plano, None);
+        let mut info: GUITHREADINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<GUITHREADINFO>() as u32;
+        if GetGUIThreadInfo(thread, &mut info).is_ok() && !info.hwndFocus.is_invalid() {
+            Some(info.hwndFocus)
+        } else {
+            None
+        }
+    }
+
+    unsafe fn classe_janela(janela: HWND) -> String {
+        let mut buffer = [0u16; 256];
+        let n = GetClassNameW(janela, &mut buffer);
+        if n <= 0 {
+            String::new()
+        } else {
+            String::from_utf16_lossy(&buffer[..n as usize])
+        }
+    }
+
+    /// É um controle de edição clássico? (Edit, RichEdit, Scintilla, etc.)
+    fn eh_controle_de_edicao(classe: &str) -> bool {
+        let c = classe.to_uppercase();
+        ["EDIT", "RICHEDIT", "SCINTILLA", "TEXTAREA", "MEMO", "TEXTBOX"]
+            .iter()
+            .any(|marca| c.contains(marca))
+    }
+
+    /// Fallback nativo: descreve o controle de edição com foco sem UI Automation.
+    unsafe fn foco_win32() -> Option<Foco> {
+        let janela = hwnd_foco()?;
+        let classe = classe_janela(janela);
+        if !eh_controle_de_edicao(&classe) {
+            return None;
+        }
+        let estilo = GetWindowLongPtrW(janela, GWL_STYLE) as u32;
+        let senha = (estilo & ES_PASSWORD) != 0;
+        let readonly = (estilo & ES_READONLY) != 0;
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(janela, Some(&mut pid));
+        let tem_selecao = !senha && selecao_edicao(janela).is_some();
+        Some(Foco {
+            editavel: !readonly && !senha,
+            tem_selecao,
+            tem_text_pattern: false,
+            suporta_texto: true,
+            senha,
+            pid,
+        })
+    }
+
+    /// Texto selecionado num controle de edição clássico (EM_GETSEL + WM_GETTEXT).
+    unsafe fn texto_selecionado_win32() -> Option<String> {
+        let janela = hwnd_foco()?;
+        let classe = classe_janela(janela);
+        if !eh_controle_de_edicao(&classe) {
+            return None;
+        }
+        if (GetWindowLongPtrW(janela, GWL_STYLE) as u32 & ES_PASSWORD) != 0 {
+            return None;
+        }
+        selecao_edicao(janela)
+    }
+
+    unsafe fn selecao_edicao(janela: HWND) -> Option<String> {
+        let pacote = SendMessageW(janela, EM_GETSEL, WPARAM(0), LPARAM(0)).0 as u32;
+        let inicio = (pacote & 0xFFFF) as usize;
+        let fim = ((pacote >> 16) & 0xFFFF) as usize;
+        if fim <= inicio {
+            return None;
+        }
+        let completo = texto_completo(janela)?;
+        let chars: Vec<char> = completo.chars().collect();
+        if inicio >= chars.len() {
+            return None;
+        }
+        let fim = fim.min(chars.len());
+        let trecho: String = chars[inicio..fim].iter().collect();
+        let trecho = trecho.trim().to_string();
+        if trecho.is_empty() {
+            None
+        } else {
+            Some(trecho)
+        }
+    }
+
+    /// Texto inteiro do controle (WM_GETTEXT é uma das mensagens que o próprio
+    /// Windows marshala entre processos, então funciona em outros apps).
+    unsafe fn texto_completo(janela: HWND) -> Option<String> {
+        let len = SendMessageW(janela, WM_GETTEXTLENGTH, WPARAM(0), LPARAM(0)).0 as usize;
+        if len == 0 {
+            return None;
+        }
+        let mut buffer = vec![0u16; len + 1];
+        let copiado = SendMessageW(
+            janela,
+            WM_GETTEXT,
+            WPARAM(len + 1),
+            LPARAM(buffer.as_mut_ptr() as isize),
+        )
+        .0 as usize;
+        let copiado = copiado.min(len);
+        Some(String::from_utf16_lossy(&buffer[..copiado]))
     }
 
     fn analisar(automation: &UIAutomation) -> Option<Foco> {
+        use uiautomation::types::ControlType;
         let elemento = automation.get_focused_element().ok()?;
         let pid = elemento.get_process_id().unwrap_or(0);
         let senha = elemento.is_password().unwrap_or(false);
         let valor = elemento.get_pattern::<UIValuePattern>();
-        let editavel = match &valor {
+        let mut editavel = match &valor {
             Ok(padrao) => !padrao.is_readonly().unwrap_or(true),
             Err(_) => false,
         };
+        // Alguns editores ricos expõem o campo como `Document` e marcam o
+        // ValuePattern como somente-leitura, mesmo aceitando digitação e Ctrl+V
+        // (é o caso, por exemplo, do WordCraft). Nesses casos tratamos como
+        // editável: a verificação pós-colagem (valor_focado) confirma se o
+        // texto realmente mudou e, se não mudou, cai no balão de resultado.
+        let eh_documento =
+            matches!(elemento.get_control_type().ok(), Some(ControlType::Document));
+        if eh_documento && !senha {
+            editavel = true;
+        }
         let texto = elemento.get_pattern::<UITextPattern>();
         let tem_text_pattern = texto.is_ok();
         let tem_selecao = match &texto {
@@ -191,7 +354,7 @@ mod win {
                 // Processa se houve arrasto real para selecionar texto ou clique duplo
                 if arrasto >= 12 || clique_duplo {
                     std::thread::sleep(Duration::from_millis(120));
-                    let foco = automation.as_ref().and_then(|a| analisar(a));
+                    let foco = analisar_completo(automation.as_ref());
                     let pid = foco.as_ref().map(|f| f.pid).unwrap_or(0);
                     let senha = foco.as_ref().map(|f| f.senha).unwrap_or(false);
 
@@ -221,6 +384,22 @@ mod win {
 
             antes_pressionado = pressionado;
             std::thread::sleep(Duration::from_millis(35));
+        }
+    }
+
+    #[cfg(test)]
+    mod testes {
+        use super::eh_controle_de_edicao;
+
+        #[test]
+        fn reconhece_controles_de_edicao_classicos() {
+            // controles que não expõem UI Automation mas leem por EM_GETSEL
+            for classe in ["Edit", "RichEdit20W", "RICHEDIT50W", "Scintilla", "TEdit", "TextArea", "TMemo", "TRichEdit"] {
+                assert!(eh_controle_de_edicao(classe), "deveria reconhecer {}", classe);
+            }
+            for classe in ["Button", "Static", "SysListView32", "SunAwtFrame", "Chrome_WidgetWin_1"] {
+                assert!(!eh_controle_de_edicao(classe), "não deveria reconhecer {}", classe);
+            }
         }
     }
 }
