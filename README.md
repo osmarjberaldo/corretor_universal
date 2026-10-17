@@ -170,7 +170,8 @@ Os pacotes prontos para uso são gerados automaticamente via **GitHub Actions** 
 
 | Sistema Operacional | Arquivo | Como Usar |
 | :--- | :--- | :--- |
-| **🪟 Windows (64-bit)** | `corretor_universal-v*-windows-x86_64.zip` | Extraia e execute `corretor_universal.exe`. Não requer instalação. |
+| **🪟 Windows (64-bit) — portátil** | `corretor_universal-v*-windows-x86_64.zip` | Extraia e execute `corretor_universal.exe`. Não requer instalação. |
+| **🪟 Windows (64-bit) — instalador** | `corretor_universal-v*-windows-x86_64.msi` | Instalador MSI (Windows Installer): instala em `Arquivos de Programas`, cria atalhos no Menu Iniciar/Área de Trabalho e permite desinstalar pelo Painel de Controle. |
 | **🐧 Linux (x86_64)** | `corretor_universal-v*-linux-x86_64.tar.gz` | Extraia e rode `./install.sh` para integrar ao menu de aplicativos e PATH. |
 | **🍎 macOS (Universal)** | `corretor_universal-v*-macos-universal.zip` | Extraia e arraste `Corretor Universal.app` para `Aplicativos`. Roda nativo no Apple Silicon (M1/M2/M3/M4) e Intel. |
 
@@ -187,7 +188,7 @@ O projeto conta com uma esteira de CI/CD completa configurada em `.github/workfl
    * Acesse a aba **Actions** no seu repositório.
    * Selecione o workflow **Build & Release Multi-Plataforma**.
    * Clique em **Run workflow**, digite a versão desejada (ex: `v0.1.0`) e confirme.
-   * O GitHub Actions compilará os binários em máquinas reais Windows, Ubuntu e macOS, empacotando e criando o Release automaticamente com os arquivos `.zip`, `.tar.gz` e checksums SHA256.
+    * O GitHub Actions compilará os binários em máquinas reais Windows, Ubuntu e macOS, empacotando e criando o Release automaticamente com os arquivos `.zip`, `.msi`, `.tar.gz` e checksums SHA256.
 
 3. **Gerar pacote local no Windows**:
    * Para gerar o zip de release localmente na sua máquina:
@@ -195,6 +196,11 @@ O projeto conta com uma esteira de CI/CD completa configurada em `.github/workfl
    .\packaging\windows\build_release_zip.ps1 -Tag v0.1.0
    ```
    * O arquivo final pronto para upload será criado em `dist/corretor_universal-v0.1.0-windows-x86_64.zip`.
+   * Para gerar o **instalador MSI** (requer o [WiX Toolset v7](https://wixtoolset.org/) — `winget install --id WiXToolset.WiXCLI -e`):
+   ```powershell
+   .\packaging\windows\build_msi.ps1 -Tag v0.1.0
+   ```
+   * O instalador será criado em `dist/corretor_universal-v0.1.0-windows-x86_64.msi`.
 
 ## Build e Execução (Manual / Código Fonte)
 

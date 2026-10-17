@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Instalador MSI do Corretor Universal (Windows Installer).
+
+  Build (ver packaging/windows/build_msi.ps1):
+    wix build corretor_universal.wxs -arch x64 -ext WixToolset.UI.wixext `
+        -d Versao=1.1.0 -d Exe=... -d Readme=... -d Licenca=... -d Icone=... -d LicencaRtf=... `
+        -o dist\CorretorUniversal-1.1.0-x64.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="Corretor Universal"
+           Manufacturer="Osmar"
+           Version="$(var.Versao)"
+           UpgradeCode="8F1A0E0E-95AB-4A9C-BEC5-B0562DFC85B4"
+           Scope="perMachine"
+           Language="1046"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="Corretor ortográfico universal" />
+
+    <!-- Substitui versões anteriores (upgrade) em vez de acumular entradas. -->
+    <MajorUpgrade DowngradeErrorMessage="Uma versão mais recente do Corretor Universal já está instalada."
+                  Schedule="afterInstallInitialize" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Ícone no painel "Aplicativos e recursos" e nos atalhos. -->
+    <Icon Id="IconeApp" SourceFile="$(var.Icone)" />
+    <Property Id="ARPPRODUCTICON" Value="IconeApp" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/osmarjberaldo/corretor_universal" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/osmarjberaldo/corretor_universal" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <!-- Assistente de instalação (WixUI_InstallDir) com escolha da pasta. -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicencaRtf)" />
+    <ui:WixUI Id="WixUI_InstallDir" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Corretor Universal" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ProgramMenuDir" Name="Corretor Universal" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Principal" Title="Corretor Universal" Level="1"
+             Description="Aplicativo principal, atalhos e documentação.">
+      <ComponentGroupRef Id="ArquivosPrincipais" />
+      <ComponentGroupRef Id="Atalhos" />
+    </Feature>
+
+    <ComponentGroup Id="ArquivosPrincipais">
+      <Component Id="ExePrincipal" Directory="INSTALLFOLDER" Guid="A8DA50EA-268A-4EBD-842F-77F1893F7EA1">
+        <File Id="corretor_universal.exe" Source="$(var.Exe)" KeyPath="yes" />
+      </Component>
+      <Component Id="ArquivoReadme" Directory="INSTALLFOLDER" Guid="685787F4-B6E4-462B-BAC6-92AEEDEF6AD0">
+        <File Id="README.md" Source="$(var.Readme)" KeyPath="yes" />
+      </Component>
+      <Component Id="ArquivoLicenca" Directory="INSTALLFOLDER" Guid="4636FDD8-35F2-46A1-A661-9D0285355264">
+        <File Id="LICENSE" Source="$(var.Licenca)" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="Atalhos">
+      <Component Id="AtalhoMenuIniciar" Directory="ProgramMenuDir" Guid="FDF9AC39-78CB-4B0C-986D-A9905D416AA8">
+        <Shortcut Id="AtalhoMenu"
+                  Name="Corretor Universal"
+                  Description="Corretor ortografico universal"
+                  Target="[INSTALLFOLDER]corretor_universal.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="IconeApp" />
+        <RemoveFolder Id="RemoverPastaMenu" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\CorretorUniversal"
+                       Name="AtalhoMenuIniciar" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <Component Id="AtalhoAreaDeTrabalho" Directory="DesktopFolder" Guid="889EB572-1D83-4B4A-9304-BC67F4A282A5">
+        <Shortcut Id="AtalhoDesktop"
+                  Name="Corretor Universal"
+                  Description="Corretor ortografico universal"
+                  Target="[INSTALLFOLDER]corretor_universal.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="IconeApp" />
+        <RegistryValue Root="HKCU" Key="Software\CorretorUniversal"
+                       Name="AtalhoAreaDeTrabalho" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+  </Package>
+</Wix>

@@ -5,3 +5,5 @@
 corretor_universal-*.zip
 corretor_universal-*.tar.gz
 corretor_universal-*.sha256
+corretor_universal-*.msi
+/.wix
