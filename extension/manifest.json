@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Corretor Universal",
+  "version": "1.1.0",
+  "description": "Correção ortográfica, gramatical e aprimoramento de texto com Inteligência Artificial para o seu navegador.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    },
+    "default_title": "Corretor Universal"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:23456/*",
+    "https://api.languagetool.org/*"
+  ]
+}

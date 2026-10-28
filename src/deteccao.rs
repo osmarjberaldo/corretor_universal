@@ -49,7 +49,7 @@ mod win {
     use uiautomation::UIAutomation;
     use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_CONTROL, VK_LBUTTON, VK_MENU,
+        GetAsyncKeyState, VK_CONTROL, VK_LBUTTON, VK_MENU, VK_RBUTTON,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GetClassNameW, GetCursorPos, GetForegroundWindow, GetGUIThreadInfo, GetWindowLongPtrW,
@@ -297,6 +297,10 @@ mod win {
         unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) & 0x8000u16 as i16) != 0 }
     }
 
+    fn botao_direito() -> bool {
+        unsafe { (GetAsyncKeyState(VK_RBUTTON.0 as i32) & 0x8000u16 as i16) != 0 }
+    }
+
     fn atalho_pressionado() -> bool {
         unsafe {
             let ctrl = (GetAsyncKeyState(VK_CONTROL.0 as i32) & 0x8000u16 as i16) != 0;
@@ -311,6 +315,7 @@ mod win {
         let proprio_pid = std::process::id();
 
         let mut antes_pressionado = false;
+        let mut antes_pressionado_dir = false;
         let mut antes_hotkey = false;
         let mut inicio = (0, 0);
         let mut instante_pressao = Instant::now();
@@ -328,12 +333,14 @@ mod win {
             // Se a detecção automática com o mouse estiver desativada, continua verificando apenas o atalho
             if !LIGADO.load(Ordering::Relaxed) {
                 antes_pressionado = false;
+                antes_pressionado_dir = false;
                 std::thread::sleep(Duration::from_millis(35));
                 continue;
             }
 
             let posicao = cursor();
             let pressionado = botao_esquerdo();
+            let pressionado_dir = botao_direito();
             let agora = Instant::now();
 
             if pressionado && !antes_pressionado {
@@ -382,7 +389,40 @@ mod win {
                 }
             }
 
+            // Clique com o botão direito sobre texto selecionado:
+            // Abre/reposiciona a barra do app próximo ao cursor
+            if !pressionado_dir && antes_pressionado_dir {
+                std::thread::sleep(Duration::from_millis(100));
+                let foco = analisar_completo(automation.as_ref());
+                let pid = foco.as_ref().map(|f| f.pid).unwrap_or(0);
+                let senha = foco.as_ref().map(|f| f.senha).unwrap_or(false);
+
+                if pid != proprio_pid && !senha {
+                    let editavel = foco.as_ref().map(|f| f.editavel).unwrap_or(true);
+                    let tem_selecao_real = match &foco {
+                        Some(f) => {
+                            if f.tem_text_pattern {
+                                f.tem_selecao
+                            } else {
+                                texto_selecionado().map(|t| !t.trim().is_empty()).unwrap_or(false)
+                            }
+                        }
+                        None => texto_selecionado().map(|t| !t.trim().is_empty()).unwrap_or(false),
+                    };
+
+                    if tem_selecao_real {
+                        // Posiciona ligeiramente acima do cursor para não conflitar com o menu de contexto nativo
+                        let _ = canal.send(Mensagem::Selecao {
+                            x: posicao.0,
+                            y: (posicao.1 - 42).max(10),
+                            editavel,
+                        });
+                    }
+                }
+            }
+
             antes_pressionado = pressionado;
+            antes_pressionado_dir = pressionado_dir;
             std::thread::sleep(Duration::from_millis(35));
         }
     }

@@ -130,6 +130,8 @@ pub fn iniciar(estado: Estado) -> (Sender<Mensagem>, Arc<Popups>) {
     let popups_motor = Arc::clone(&popups);
     // detecção automática de seleção (thread própria)
     deteccao::iniciar(tx.clone());
+    // servidor local para integração com a extensão do navegador
+    crate::servidor::iniciar(Arc::clone(&estado), tx.clone(), Arc::clone(&popups));
     let estado_motor = Arc::clone(&estado);
     thread::spawn(move || laco(estado_motor, rx, popups_motor));
     (tx, popups)

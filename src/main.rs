@@ -9,6 +9,7 @@ mod historico;
 mod ia;
 mod motor;
 mod popup;
+mod servidor;
 mod tray;
 
 use config::Config;

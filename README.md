@@ -101,6 +101,9 @@ estava, e não no popup (as janelas são criadas com `WS_EX_NOACTIVATE`).
 
 ## Novidades e Recursos Recentes
 
+* 🖱️ **Detecção no Botão Direito & Menu de Contexto do Navegador**:
+  * **App Desktop**: Ao selecionar texto e soltar o clique com o **botão direito**, o app detecta e abre/reposiciona a barra flutuante ou balão próximo ao cursor em qualquer programa.
+  * **Extensão para Chrome / Edge / Brave / Opera**: Pasta [`extension/`](extension/) pronta para carregar no navegador (`chrome://extensions`), adicionando as opções do app (*A✓ Corrigir seleção*, *🪄 Melhorar com IA*, *Tornar mais formal/simples/curto* e *Copiar*) diretamente dentro do menu nativo de clique direito. Comunicação bidirecional com o app via API local (`127.0.0.1:23456`) e suporte a fallback independente.
 * ⌨️ **Atalho Global do Teclado 100% Personalizável**:
   * Escolha qualquer combinação de modificadores (`Ctrl`, `Alt/Option`, `Shift`, `Win/Cmd`) e teclas (`A-Z`, `0-9`, `F1-F12`, `Space`) diretamente na aba *Configurações*.
   * O registro no sistema é atualizado instantaneamente sem necessidade de reiniciar o aplicativo. Botão para restaurar o padrão (`Ctrl+Alt+C` ou `Cmd+Alt+C`).
@@ -203,6 +206,29 @@ O projeto conta com uma esteira de CI/CD completa configurada em `.github/workfl
    * O instalador será criado em `dist/corretor_universal-v0.1.0-windows-x86_64.msi`.
 
 ## Build e Execução (Manual / Código Fonte)
+
+### 🧪 Executar Rapidamente em Modo de Teste / Desenvolvimento (Dev Mode)
+
+Para testar ou desenvolver o aplicativo com **todos os logs visíveis no terminal** em tempo real (eventos de seleção com botão esquerdo e direito, requisições da extensão do navegador, chamadas de IA e diagnósticos):
+
+```powershell
+# Compilar e executar diretamente em modo dev (com console de logs aberto):
+cargo run
+
+# Ou utilize os scripts de atalho:
+.\dev.ps1        # No PowerShell
+dev.bat          # No Prompt de Comando / Duplo clique no Windows Explorer
+```
+
+Se preferir apenas gerar a build de teste sem executar imediatamente:
+```powershell
+cargo build
+.\target\debug\corretor_universal.exe
+```
+
+> 💡 **Vantagem do Modo Dev**: No modo de desenvolvimento (`debug`), o terminal do Windows permanece aberto mostrando em tempo real o que o app está fazendo. Já no modo de produção (`cargo build --release`), o executável roda silencioso e invisível em segundo plano junto ao relógio do sistema.
+
+---
 
 ### 1. Windows
 
