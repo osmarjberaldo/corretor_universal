@@ -27,6 +27,9 @@ pub struct Foco {
     /// TextPattern). Muitos controles legados/ somente-leitura não têm
     /// TextPattern, então este é o sinal usado para "dá para selecionar aqui".
     pub suporta_texto: bool,
+    /// Elemento de lista, ícone de desktop, botão, aba ou menu onde um duplo clique
+    /// serve para abrir ou acionar o item, e NÃO para selecionar texto.
+    pub eh_item_nao_texto: bool,
     pub senha: bool,
     pub pid: u32,
 }
@@ -104,6 +107,9 @@ mod win {
                 u.editavel |= f.editavel;
                 u.tem_selecao |= f.tem_selecao;
                 u.suporta_texto |= f.suporta_texto;
+                if f.tem_selecao {
+                    u.eh_item_nao_texto = false;
+                }
                 Some(u)
             }
             (Some(u), None) => Some(u),
@@ -189,6 +195,7 @@ mod win {
             tem_selecao,
             tem_text_pattern: false,
             suporta_texto: true,
+            eh_item_nao_texto: false,
             senha,
             pid,
         })
@@ -253,6 +260,21 @@ mod win {
         let elemento = automation.get_focused_element().ok()?;
         let pid = elemento.get_process_id().unwrap_or(0);
         let senha = elemento.is_password().unwrap_or(false);
+        let control_type = elemento.get_control_type().ok();
+        let eh_item_nao_texto = matches!(
+            control_type,
+            Some(ControlType::ListItem)
+                | Some(ControlType::TreeItem)
+                | Some(ControlType::Button)
+                | Some(ControlType::MenuItem)
+                | Some(ControlType::TabItem)
+                | Some(ControlType::HeaderItem)
+                | Some(ControlType::ScrollBar)
+                | Some(ControlType::Image)
+                | Some(ControlType::TitleBar)
+                | Some(ControlType::Separator)
+                | Some(ControlType::AppBar)
+        );
         let valor = elemento.get_pattern::<UIValuePattern>();
         let mut editavel = match &valor {
             Ok(padrao) => !padrao.is_readonly().unwrap_or(true),
@@ -264,7 +286,7 @@ mod win {
         // editável: a verificação pós-colagem (valor_focado) confirma se o
         // texto realmente mudou e, se não mudou, cai no balão de resultado.
         let eh_documento =
-            matches!(elemento.get_control_type().ok(), Some(ControlType::Document));
+            matches!(control_type, Some(ControlType::Document));
         if eh_documento && !senha {
             editavel = true;
         }
@@ -282,7 +304,31 @@ mod win {
             Err(_) => false,
         };
         let suporta_texto = valor.is_ok() || texto.is_ok();
-        Some(Foco { editavel, tem_selecao, tem_text_pattern, suporta_texto, senha, pid })
+        Some(Foco {
+            editavel,
+            tem_selecao,
+            tem_text_pattern,
+            suporta_texto,
+            eh_item_nao_texto,
+            senha,
+            pid,
+        })
+    }
+
+    /// Verifica se a janela em primeiro plano é uma área do sistema sem texto selecionável
+    /// (Área de Trabalho/Desktop, Barra de Tarefas, etc.)
+    unsafe fn eh_janela_sistema_sem_texto() -> bool {
+        let fg = GetForegroundWindow();
+        if fg.is_invalid() {
+            return false;
+        }
+        let classe = classe_janela(fg);
+        let c = classe.to_uppercase();
+        c.contains("PROGMAN")
+            || c.contains("WORKERW")
+            || c.contains("SHELL_TRAYWND")
+            || c.contains("SHELL_SECONDARYTRAYWND")
+            || c.contains("TASKBAR")
     }
 
     fn cursor() -> (i32, i32) {
@@ -361,24 +407,36 @@ mod win {
                 // Processa se houve arrasto real para selecionar texto ou clique duplo
                 if arrasto >= 12 || clique_duplo {
                     std::thread::sleep(Duration::from_millis(120));
+
+                    // Ignora áreas do sistema operacional sem texto selecionável (Desktop, Barra de Tarefas)
+                    if unsafe { eh_janela_sistema_sem_texto() } {
+                        continue;
+                    }
+
                     let foco = analisar_completo(automation.as_ref());
                     let pid = foco.as_ref().map(|f| f.pid).unwrap_or(0);
                     let senha = foco.as_ref().map(|f| f.senha).unwrap_or(false);
+                    let item_nao_texto = foco.as_ref().map(|f| f.eh_item_nao_texto).unwrap_or(false);
 
                     if pid != proprio_pid && !senha {
                         let editavel = foco.as_ref().map(|f| f.editavel).unwrap_or(true);
-                        let tem_selecao_real = match &foco {
-                            Some(f) => {
-                                if f.tem_text_pattern {
-                                    f.tem_selecao
-                                } else {
-                                    arrasto >= 14 || clique_duplo
-                                }
-                            }
-                            None => arrasto >= 14 || clique_duplo,
+
+                        let tem_selecao_direta = foco.as_ref().map(|f| f.tem_selecao).unwrap_or(false);
+                        let tem_texto_real = tem_selecao_direta
+                            || texto_selecionado().map(|t| !t.trim().is_empty()).unwrap_or(false);
+
+                        let tem_selecao_valida = if clique_duplo {
+                            // No clique duplo: SÓ exibe se realmente houver texto/palavra selecionada
+                            // e NÃO for um item de lista, ícone ou botão
+                            tem_texto_real && !item_nao_texto
+                        } else if arrasto >= 14 {
+                            // No arrasto: confirma texto real, ou suporte a texto comprovado sem ser item de lista
+                            tem_texto_real || (!item_nao_texto && foco.as_ref().map(|f| f.suporta_texto).unwrap_or(false))
+                        } else {
+                            false
                         };
 
-                        if tem_selecao_real {
+                        if tem_selecao_valida {
                             let _ = canal.send(Mensagem::Selecao {
                                 x: posicao.0,
                                 y: posicao.1,
@@ -393,22 +451,21 @@ mod win {
             // Abre/reposiciona a barra do app próximo ao cursor
             if !pressionado_dir && antes_pressionado_dir {
                 std::thread::sleep(Duration::from_millis(100));
+
+                if unsafe { eh_janela_sistema_sem_texto() } {
+                    continue;
+                }
+
                 let foco = analisar_completo(automation.as_ref());
                 let pid = foco.as_ref().map(|f| f.pid).unwrap_or(0);
                 let senha = foco.as_ref().map(|f| f.senha).unwrap_or(false);
+                let item_nao_texto = foco.as_ref().map(|f| f.eh_item_nao_texto).unwrap_or(false);
 
-                if pid != proprio_pid && !senha {
+                if pid != proprio_pid && !senha && !item_nao_texto {
                     let editavel = foco.as_ref().map(|f| f.editavel).unwrap_or(true);
-                    let tem_selecao_real = match &foco {
-                        Some(f) => {
-                            if f.tem_text_pattern {
-                                f.tem_selecao
-                            } else {
-                                texto_selecionado().map(|t| !t.trim().is_empty()).unwrap_or(false)
-                            }
-                        }
-                        None => texto_selecionado().map(|t| !t.trim().is_empty()).unwrap_or(false),
-                    };
+                    let tem_selecao_direta = foco.as_ref().map(|f| f.tem_selecao).unwrap_or(false);
+                    let tem_selecao_real = tem_selecao_direta
+                        || texto_selecionado().map(|t| !t.trim().is_empty()).unwrap_or(false);
 
                     if tem_selecao_real {
                         // Posiciona ligeiramente acima do cursor para não conflitar com o menu de contexto nativo
