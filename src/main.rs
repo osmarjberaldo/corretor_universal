@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // Oculta o console no Windows em modo release
+#![windows_subsystem = "windows"] // Oculta permanentemente o console (cmd/terminal) no Windows tanto em debug quanto em release
 
 mod aplicacao;
 mod autostart;
@@ -48,6 +48,8 @@ struct CorretorApp {
     reiniciar_apos_salvar: bool,
     mostrar_modal_fechar: bool,
     lembrar_escolha_fechar: bool,
+    primeiro_frame: bool,
+    iniciar_oculto: bool,
 }
 
 impl CorretorApp {
@@ -59,6 +61,7 @@ impl CorretorApp {
         hotkey_atual: Option<HotKey>,
         hotkey_id: Arc<AtomicU32>,
         bandeja: Option<tray::Bandeja>,
+        iniciar_oculto: bool,
     ) -> Self {
         if let Ok(mut c) = estado.lock() {
             c.ctx = Some(cc.egui_ctx.clone());
@@ -78,6 +81,8 @@ impl CorretorApp {
             reiniciar_apos_salvar: true,
             mostrar_modal_fechar: false,
             lembrar_escolha_fechar: false,
+            primeiro_frame: true,
+            iniciar_oculto,
         }
     }
 
@@ -289,6 +294,12 @@ impl CorretorApp {
 
 impl eframe::App for CorretorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.primeiro_frame {
+            self.primeiro_frame = false;
+            if self.iniciar_oculto {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            }
+        }
         self.janela(ctx);
 
         let mut est = match self.estado.lock() {
@@ -616,6 +627,19 @@ impl eframe::App for CorretorApp {
                                     est.log(format!("[Erro Inicialização] {}", e));
                                 }
                             }
+                        }
+
+                        let mut iniciar_minimizado = est.config.iniciar_minimizado;
+                        if ui
+                            .checkbox(
+                                &mut iniciar_minimizado,
+                                "Iniciar minimizado na bandeja (junto ao relógio) ao abrir com o sistema",
+                            )
+                            .changed()
+                        {
+                            est.config.iniciar_minimizado = iniciar_minimizado;
+                            let _ = est.config.salvar();
+                            est.log(format!("[Config] Iniciar minimizado alterado para: {}", iniciar_minimizado));
                         }
                         let sistema_desc = if cfg!(target_os = "windows") {
                             "Integração nativa com o Registro do Windows (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run)."
@@ -1143,6 +1167,27 @@ fn main() -> eframe::Result<()> {
     }));
 
     let args: Vec<String> = std::env::args().collect();
+
+    // Se estiver no Windows e não for um teste em linha de comando, garante que nenhum console/cmd fique visível
+    #[cfg(windows)]
+    {
+        let eh_cli = args.iter().any(|a| {
+            a == "--self-test"
+                || a == "--ia-test"
+                || a == "--uia-test"
+                || a == "--analise-test"
+                || a == "--console"
+        });
+        if !eh_cli {
+            unsafe {
+                extern "system" {
+                    fn FreeConsole() -> i32;
+                }
+                FreeConsole();
+            }
+        }
+    }
+
     if args.iter().any(|a| a == "--self-test") {
         std::process::exit(autoteste(&args));
     }
@@ -1163,12 +1208,18 @@ fn main() -> eframe::Result<()> {
     let estado: Estado = Arc::new(Mutex::new(Compartilhado::novo(config)));
     let (canal, _popups) = motor::iniciar(Arc::clone(&estado));
 
+    let eh_autostart = args.iter().any(|a| {
+        a == "--autostart" || a == "--minimizada" || a == "--silencioso" || a == "--tray"
+    });
+    let deve_iniciar_minimizado = eh_autostart;
+
     let opcoes = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([700.0, 620.0])
             .with_min_inner_size([540.0, 440.0])
             .with_title("Corretor Ortográfico Universal")
-            .with_icon(icone_janela()),
+            .with_icon(icone_janela())
+            .with_visible(!deve_iniciar_minimizado),
         ..Default::default()
     };
 
@@ -1203,6 +1254,7 @@ fn main() -> eframe::Result<()> {
                 hotkey_atual,
                 hotkey_id,
                 bandeja,
+                deve_iniciar_minimizado,
             )))
         }),
     )

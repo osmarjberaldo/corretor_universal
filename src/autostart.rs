@@ -19,7 +19,7 @@ pub fn sincronizar(habilitar: bool) {
 #[cfg(target_os = "windows")]
 pub fn ativar() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|e| format!("Não foi possível obter o caminho do executável: {}", e))?;
-    let exe_str = format!("\"{}\"", exe.to_string_lossy());
+    let exe_str = format!("\"{}\" --autostart", exe.to_string_lossy());
 
     let mut cmd = std::process::Command::new("reg");
     cmd.args(&[
@@ -111,7 +111,7 @@ pub fn ativar() -> Result<String, String> {
          Version=1.0\n\
          Name=Corretor Ortográfico Universal\n\
          Comment=Corretor Universal de Texto com IA\n\
-         Exec=\"{}\"\n\
+         Exec=\"{}\" --autostart\n\
          Terminal=false\n\
          StartupNotify=false\n\
          X-GNOME-Autostart-enabled=true\n",
@@ -164,6 +164,7 @@ pub fn ativar() -> Result<String, String> {
              <key>ProgramArguments</key>\n\
              <array>\n\
                  <string>{}</string>\n\
+                 <string>--autostart</string>\n\
              </array>\n\
              <key>RunAtLoad</key>\n\
              <true/>\n\

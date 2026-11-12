@@ -53,6 +53,10 @@ impl AtalhoConfig {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// Configuração persistida em disco. Fica em:
 /// - Windows: %APPDATA%\corretor_universal\config.json
 /// - macOS:   ~/Library/Application Support/corretor_universal/config.json
@@ -66,6 +70,9 @@ pub struct Config {
     pub deteccao_automatica: bool,
     /// Iniciar automaticamente com o sistema operacional (Windows / macOS / Linux).
     pub iniciar_com_sistema: bool,
+    /// Iniciar a janela minimizada na bandeja (junto ao relógio) ao abrir com o sistema.
+    #[serde(default = "default_true")]
+    pub iniciar_minimizado: bool,
     /// Exibir balão flutuante quando o campo não aceitar substituição direta.
     pub balao_ativo: bool,
     /// Mostrar a prévia do texto novo e pedir confirmação antes de substituir.
@@ -108,6 +115,7 @@ impl Default for Config {
             ativo: true,
             deteccao_automatica: true,
             iniciar_com_sistema: false,
+            iniciar_minimizado: true,
             balao_ativo: true,
             confirmar_substituicao: true,
             acao_ao_fechar: AcaoFechar::Perguntar,
